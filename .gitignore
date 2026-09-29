@@ -1,0 +1,3 @@
+api-vercel/.env*
+api-vercel/.vercel/
+api-vercel/node_modules/

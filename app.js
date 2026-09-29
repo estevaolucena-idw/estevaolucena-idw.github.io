@@ -1,6 +1,7 @@
 import {
   authenticateOptions,
   authenticateVerify,
+  checkApiHealth,
   clearAllSessions,
   clearStore,
   getSessionUser,
@@ -13,6 +14,7 @@ import {
   registerVerify,
   setSessionUser,
 } from "./server.js";
+import { getApiBase } from "./api-client.js";
 import {
   decodeAuthenticationResponse,
   decodeRegistrationResponse,
@@ -88,20 +90,29 @@ function setStep(n) {
   els.panelSuccess.classList.toggle("hidden", n !== 3);
 }
 
-function refreshStore() {
-  const snap = getStoreSnapshot();
-  els.storeView.textContent = pretty(snap);
-  const count = snap.credentials?.length || 0;
-  const verifiable = (snap.credentials || []).filter((c) => c.publicKeyCose).length;
-  if (count === 0) {
-    els.credBadge.textContent = "sem passkey";
-    els.credBadge.className = "badge";
-  } else {
-    els.credBadge.textContent =
-      verifiable === count
-        ? `${count} passkey(s)`
-        : `${count} passkey(s) · ${verifiable} verificável(is)`;
-    els.credBadge.className = "badge ok";
+async function refreshStore() {
+  try {
+    const snap = await getStoreSnapshot();
+    els.storeView.textContent = pretty(snap);
+    const count = snap.credentials?.length || 0;
+    const verifiable = (snap.credentials || []).filter((c) => c.publicKeyCose).length;
+    if (count === 0) {
+      els.credBadge.textContent = "sem passkey";
+      els.credBadge.className = "badge";
+    } else {
+      els.credBadge.textContent =
+        verifiable === count
+          ? `${count} passkey(s)`
+          : `${count} passkey(s) · ${verifiable} verificável(is)`;
+      els.credBadge.className = "badge ok";
+    }
+  } catch (error) {
+    els.storeView.textContent = pretty({
+      apiBase: getApiBase(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    els.credBadge.textContent = "api offline";
+    els.credBadge.className = "badge err";
   }
 }
 
@@ -133,7 +144,7 @@ function renderTimeline() {
 onTimeline((entry) => {
   timeline.push(entry);
   renderTimeline();
-  refreshStore();
+  void refreshStore();
 });
 
 async function probeCapabilities() {
@@ -183,32 +194,38 @@ function renderCapabilities(target) {
     .join("");
 }
 
-function renderRecentUsers() {
-  const users = listSessionUsernames();
-  if (!users.length) {
-    els.recentUsers.innerHTML = "";
-    return;
-  }
-  els.recentUsers.innerHTML = `
-    <p class="hint">Sessões já usadas neste navegador:</p>
+async function renderRecentUsers() {
+  try {
+    const users = await listSessionUsernames();
+    if (!users.length) {
+      els.recentUsers.innerHTML = `<p class="hint">API: <code>${getApiBase()}</code></p>`;
+      return;
+    }
+    els.recentUsers.innerHTML = `
+    <p class="hint">Sessões na API (<code>${getApiBase()}</code>):</p>
     <div class="chip-row">
       ${users
         .map((u) => `<button type="button" class="chip" data-user="${u}">${u}</button>`)
         .join("")}
     </div>`;
-  els.recentUsers.querySelectorAll("[data-user]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      els.username.value = btn.dataset.user;
-      els.username.focus();
+    els.recentUsers.querySelectorAll("[data-user]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        els.username.value = btn.dataset.user;
+        els.username.focus();
+      });
     });
-  });
+  } catch (error) {
+    els.recentUsers.innerHTML = `<p class="hint">Falha ao listar sessões em <code>${getApiBase()}</code>: ${
+      error instanceof Error ? error.message : String(error)
+    }</p>`;
+  }
 }
 
-function applyFlowUi() {
+async function applyFlowUi() {
   const username = getSessionUser();
   els.sessionLabel.textContent = username || "—";
   renderCapabilities(els.capsFlow);
-  refreshStore();
+  await refreshStore();
 
   if (!window.isSecureContext) {
     setStatus("Contexto inseguro: WebAuthn exige HTTPS (ou localhost).", "err");
@@ -229,10 +246,25 @@ function applyFlowUi() {
   els.btnRegister.disabled = false;
   els.btnRegister.classList.remove("hidden");
 
-  const hasCreds = hasLocalCredentials();
-  const hasKeys = hasVerifiableCredentials();
-  const snap = getStoreSnapshot();
-  const count = snap.credentials?.length || 0;
+  let hasCreds = false;
+  let hasKeys = false;
+  let count = 0;
+  try {
+    hasCreds = await hasLocalCredentials();
+    hasKeys = await hasVerifiableCredentials();
+    const snap = await getStoreSnapshot();
+    count = snap.credentials?.length || 0;
+  } catch (error) {
+    setStatus(
+      `API indisponível (${getApiBase()}): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      "err"
+    );
+    els.btnContinue.classList.add("hidden");
+    els.btnContinue.disabled = true;
+    return;
+  }
 
   // Continuar só quando já identificamos passkey(s) para este usuário neste navegador
   els.btnContinue.classList.toggle("hidden", !hasCreds);
@@ -267,17 +299,21 @@ function applyFlowUi() {
   }
 }
 
-function enterSession(rawUsername) {
-  const username = setSessionUser(rawUsername);
+async function enterSession(rawUsername) {
+  const username = await setSessionUser(rawUsername);
   els.username.value = username;
   setStep(2);
-  applyFlowUi();
-  els.lastMeta.textContent = pretty({ sessionUser: username, capabilities });
+  await applyFlowUi();
+  els.lastMeta.textContent = pretty({
+    sessionUser: username,
+    apiBase: getApiBase(),
+    capabilities,
+  });
 }
 
-function goToSessionStep() {
+async function goToSessionStep() {
   setStep(1);
-  renderRecentUsers();
+  await renderRecentUsers();
   renderCapabilities(els.caps);
   els.username.focus();
 }
@@ -462,7 +498,7 @@ async function runRegister() {
   } finally {
     els.btnRegister.disabled = false;
     els.btnContinue.disabled = false;
-    refreshStore();
+    await refreshStore();
   }
 }
 
@@ -509,11 +545,12 @@ async function runAuthenticate() {
     els.lastMeta.textContent = pretty({ error: normalized, capabilities });
     els.diagnostics.open = true;
 
+    const hasCreds = await hasLocalCredentials().catch(() => false);
     const needsRegister =
       normalized.code === "CREDENTIAL_NOT_FOUND" ||
       normalized.code === "NotAllowedError" ||
       normalized.code === "InvalidStateError" ||
-      !hasLocalCredentials();
+      !hasCreds;
 
     if (needsRegister && capabilities.webauthn) {
       els.btnRegister.classList.remove("hidden");
@@ -521,21 +558,21 @@ async function runAuthenticate() {
         `${normalized.message}\n\nCadastre uma passkey para "${getSessionUser()}" neste aparelho.`,
         "err"
       );
-      applyFlowUi();
+      await applyFlowUi();
     }
   } finally {
     els.btnRegister.disabled = false;
     els.btnContinue.disabled = false;
-    refreshStore();
+    await refreshStore();
   }
 }
 
-els.formSession.addEventListener("submit", (event) => {
+els.formSession.addEventListener("submit", async (event) => {
   event.preventDefault();
   const errBox = $("session-error");
   try {
     errBox.classList.add("hidden");
-    enterSession(els.username.value);
+    await enterSession(els.username.value);
   } catch (error) {
     const normalized = normalizeBrowserError(error);
     errBox.textContent = normalized.message;
@@ -546,31 +583,31 @@ els.formSession.addEventListener("submit", (event) => {
 els.btnRegister.addEventListener("click", () => runRegister());
 els.btnContinue.addEventListener("click", () => runAuthenticate());
 
-els.btnClear.addEventListener("click", () => {
-  clearStore();
+els.btnClear.addEventListener("click", async () => {
+  await clearStore();
   timeline.length = 0;
   renderTimeline();
-  applyFlowUi();
+  await applyFlowUi();
   setStatus(
-    `Sessão de "${getSessionUser()}" limpa no array mock. A passkey no autenticador permanece.`,
+    `Sessão de "${getSessionUser()}" limpa na API. A passkey no autenticador permanece.`,
     "idle"
   );
 });
 
-els.btnClearAll.addEventListener("click", () => {
-  if (!confirm("Limpar TODAS as sessões do array mock neste navegador?")) return;
-  clearAllSessions();
+els.btnClearAll.addEventListener("click", async () => {
+  if (!confirm("Limpar TODAS as sessões na API Vercel?")) return;
+  await clearAllSessions();
   timeline.length = 0;
   renderTimeline();
-  applyFlowUi();
-  setStatus("Todas as sessões foram removidas do array mock.", "idle");
+  await applyFlowUi();
+  setStatus("Todas as sessões foram removidas na API.", "idle");
 });
 
 els.btnChangeUser.addEventListener("click", () => goToSessionStep());
 els.btnSuccessChangeUser.addEventListener("click", () => goToSessionStep());
-els.btnTestAgain.addEventListener("click", () => {
+els.btnTestAgain.addEventListener("click", async () => {
   setStep(2);
-  applyFlowUi();
+  await applyFlowUi();
 });
 
 els.btnInspect.addEventListener("click", async () => {
@@ -594,9 +631,20 @@ async function boot() {
   els.origin.textContent = location.origin;
   await probeCapabilities();
   renderCapabilities(els.caps);
-  renderRecentUsers();
   renderTimeline();
-  refreshStore();
+  try {
+    const health = await checkApiHealth();
+    setStatus(`API ok: ${getApiBase()} (${health.storage || "ok"})`, "idle");
+  } catch (error) {
+    setStatus(
+      `API indisponível: ${getApiBase()} — ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      "err"
+    );
+  }
+  await renderRecentUsers();
+  await refreshStore();
 
   const existing = getSessionUser();
   if (existing) {

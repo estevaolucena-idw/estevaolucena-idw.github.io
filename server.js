@@ -1,6 +1,7 @@
 /**
- * Servidor mock no navegador.
- * Sessões em array (add/get/remove/clear). Persistência local só neste navegador.
+ * Servidor mock no navegador (WebAuthn + verificação).
+ * Sessões/credenciais centralizadas na API Vercel (api-client.js).
+ * Challenge da cerimônia permanece local (sessionStorage).
  */
 import {
   base64UrlToBuffer,
@@ -10,6 +11,15 @@ import {
   parseAuthenticatorData,
   sha256Hex,
 } from "./decode.js";
+import {
+  apiClearAllSessions,
+  apiDeleteSession,
+  apiGetSession,
+  apiHealth,
+  apiListSessions,
+  apiPutSession,
+  getApiBase,
+} from "./api-client.js";
 
 /** Fingerprints / packages espelhados de .well-known/assetlinks.json */
 const ANDROID_FINGERPRINTS = [
@@ -94,113 +104,81 @@ function normalizeUsername(value) {
 }
 
 const SESSION_KEY = "poc-passkey:session-user";
-const SESSIONS_KEY = "poc-passkey:sessions-array";
+const CHALLENGE_KEY = "poc-passkey:pending-challenge";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
-/**
- * Banco mock da PoC: array de sessões em memória.
- * Persistido em localStorage só para sobreviver a refresh no MESMO navegador.
- * Não é compartilhado entre dispositivos (GitHub Pages não tem backend).
- * @type {Array<{ username: string, user: object|null, credentials: array, challenge: object|null }>}
- */
-let sessions = [];
-let sessionsHydrated = false;
-
-function hydrateSessions() {
-  if (sessionsHydrated) return;
-  sessionsHydrated = true;
-  try {
-    const raw = localStorage.getItem(SESSIONS_KEY);
-    if (!raw) {
-      sessions = [];
-      return;
-    }
-    const parsed = JSON.parse(raw);
-    sessions = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    sessions = [];
-  }
-}
-
-function persistSessions() {
-  hydrateSessions();
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-}
-
 function emptySession(username) {
-  return { username, user: null, credentials: [], challenge: null };
+  return { username, user: null, credentials: [], updatedAt: null };
 }
 
-/** Lista todas as sessões do array mock. */
-export function listSessions() {
-  hydrateSessions();
-  return sessions.map((s) => ({
-    username: s.username,
-    credentialCount: s.credentials?.length || 0,
-    hasUser: Boolean(s.user),
-  }));
-}
-
-/** Busca sessão por username (ou null). */
-export function getSession(username) {
-  hydrateSessions();
-  return sessions.find((s) => s.username === username) || null;
-}
-
-/** Cria ou devolve a sessão no array. */
-export function ensureSession(username) {
-  hydrateSessions();
-  let session = getSession(username);
-  if (!session) {
-    session = emptySession(username);
-    sessions.push(session);
-    persistSessions();
+function readLocalChallenge() {
+  try {
+    const raw = sessionStorage.getItem(CHALLENGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
-  return session;
 }
 
-/** Substitui campos da sessão e persiste. */
-export function upsertSession(username, patch) {
-  const session = ensureSession(username);
-  Object.assign(session, patch, { username });
-  persistSessions();
-  return session;
+function writeLocalChallenge(challenge) {
+  if (!challenge) sessionStorage.removeItem(CHALLENGE_KEY);
+  else sessionStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenge));
 }
 
-/** Remove uma sessão do array. */
-export function removeSession(username) {
-  hydrateSessions();
-  const before = sessions.length;
-  sessions = sessions.filter((s) => s.username !== username);
-  persistSessions();
-  const removed = before !== sessions.length;
+export async function listSessions() {
+  const data = await apiListSessions();
+  return data.sessions || [];
+}
+
+export async function getSession(username) {
+  return apiGetSession(username);
+}
+
+export async function ensureSession(username) {
+  try {
+    return await apiGetSession(username);
+  } catch (error) {
+    if (error.status === 404 || error.status === 400) {
+      return apiPutSession(username, { user: null, credentials: [] });
+    }
+    // sessão inexistente: API devolve bucket vazio 200 — então só cria se falhar
+    return apiPutSession(username, { user: null, credentials: [] });
+  }
+}
+
+export async function upsertSession(username, patch) {
+  const current = await apiGetSession(username).catch(() => emptySession(username));
+  return apiPutSession(username, {
+    user: patch.user !== undefined ? patch.user : current.user,
+    credentials:
+      patch.credentials !== undefined ? patch.credentials : current.credentials || [],
+  });
+}
+
+export async function removeSession(username) {
+  const result = await apiDeleteSession(username);
   emitTimeline({
     route: "removeSession",
     ok: true,
     request: { username },
-    response: { removed },
+    response: result,
     durationMs: 0,
     at: new Date().toISOString(),
   });
-  return removed;
+  return result.removed;
 }
 
-/** Limpa todo o array de sessões (útil para testes). */
-export function clearAllSessions() {
-  hydrateSessions();
-  const count = sessions.length;
-  const usernames = sessions.map((s) => s.username);
-  sessions = [];
-  persistSessions();
+export async function clearAllSessions() {
+  const result = await apiClearAllSessions();
   emitTimeline({
     route: "clearAllSessions",
     ok: true,
     request: null,
-    response: { cleared: count, usernames },
+    response: result,
     durationMs: 0,
     at: new Date().toISOString(),
   });
-  return { cleared: count, usernames };
+  return result;
 }
 
 export function getSessionUser() {
@@ -211,16 +189,19 @@ export function getSessionUser() {
   }
 }
 
-export function setSessionUser(rawUsername) {
+export async function setSessionUser(rawUsername) {
   const username = normalizeUsername(rawUsername);
   sessionStorage.setItem(SESSION_KEY, username);
   localStorage.setItem(SESSION_KEY, username);
-  ensureSession(username);
+  const session = await ensureSession(username);
   emitTimeline({
     route: "setSessionUser",
     ok: true,
-    request: { username },
-    response: { username },
+    request: { username, apiBase: getApiBase() },
+    response: {
+      username,
+      credentialCount: session.credentials?.length || 0,
+    },
     durationMs: 0,
     at: new Date().toISOString(),
   });
@@ -239,53 +220,62 @@ function requireSessionUsername() {
   return username;
 }
 
-function loadStore() {
+async function loadStore() {
   const username = requireSessionUsername();
-  const session = ensureSession(username);
+  const session = await apiGetSession(username);
   return {
-    username: session.username,
-    user: session.user,
-    credentials: session.credentials,
-    challenge: session.challenge,
+    username,
+    user: session.user || null,
+    credentials: session.credentials || [],
+    challenge: readLocalChallenge(),
   };
 }
 
-function saveStore(store) {
-  upsertSession(store.username, {
+async function saveStore(store) {
+  await apiPutSession(store.username, {
     user: store.user,
     credentials: store.credentials,
-    challenge: store.challenge,
   });
+  // challenge só local
+  writeLocalChallenge(store.challenge || null);
 }
 
-export function listSessionUsernames() {
-  return listSessions().map((s) => s.username).sort();
+export async function listSessionUsernames() {
+  const sessions = await listSessions();
+  return sessions.map((s) => s.username).sort();
 }
 
-export function getStoreSnapshot() {
-  hydrateSessions();
+export async function getStoreSnapshot() {
   const username = getSessionUser();
+  const sessions = await listSessions();
   if (!username) {
-    return { sessionUser: null, credentials: [], challenge: null, sessions: listSessions() };
+    return {
+      sessionUser: null,
+      credentials: [],
+      challenge: null,
+      sessions,
+      apiBase: getApiBase(),
+    };
   }
-  const session = ensureSession(username);
+  const session = await apiGetSession(username);
+  const challenge = readLocalChallenge();
   return {
     sessionUser: username,
     user: session.user,
-    credentials: session.credentials,
-    challenge: session.challenge
+    credentials: session.credentials || [],
+    challenge: challenge
       ? {
-          type: session.challenge.type,
-          expiresAt: session.challenge.expiresAt,
-          expired: session.challenge.expiresAt < Date.now(),
+          type: challenge.type,
+          expiresAt: challenge.expiresAt,
+          expired: challenge.expiresAt < Date.now(),
         }
       : null,
-    sessions: listSessions(),
+    sessions,
+    apiBase: getApiBase(),
   };
 }
 
-/** Limpa passkeys/sessão do usuário atual no array mock. */
-export function clearStore() {
+export async function clearStore() {
   const username = getSessionUser();
   if (!username) {
     emitTimeline({
@@ -298,7 +288,8 @@ export function clearStore() {
     });
     return { cleared: false };
   }
-  upsertSession(username, { user: null, credentials: [], challenge: null });
+  await apiPutSession(username, { user: null, credentials: [] });
+  writeLocalChallenge(null);
   emitTimeline({
     route: "clearStore",
     ok: true,
@@ -308,6 +299,10 @@ export function clearStore() {
     at: new Date().toISOString(),
   });
   return { cleared: true, username };
+}
+
+export async function checkApiHealth() {
+  return apiHealth();
 }
 
 function randomChallenge() {
@@ -323,10 +318,8 @@ function randomUserId() {
 }
 
 function takeChallenge(expectedType) {
-  const store = loadStore();
-  const { challenge } = store;
-  store.challenge = null;
-  saveStore(store);
+  const challenge = readLocalChallenge();
+  writeLocalChallenge(null);
   if (!challenge || challenge.type !== expectedType || challenge.expiresAt < Date.now()) {
     throw pocError("CHALLENGE_EXPIRED", "Desafio expirado ou inexistente. Tente novamente.", {
       expectedType,
@@ -337,13 +330,11 @@ function takeChallenge(expectedType) {
 }
 
 function setChallenge(type, value) {
-  const store = loadStore();
-  store.challenge = {
+  writeLocalChallenge({
     type,
     value,
     expiresAt: Date.now() + CHALLENGE_TTL_MS,
-  };
-  saveStore(store);
+  });
 }
 
 async function withTimeline(route, request, action) {
@@ -381,18 +372,18 @@ async function withTimeline(route, request, action) {
 export async function registerOptions(userName, capabilities = {}) {
   const sessionUser = userName ? normalizeUsername(userName) : requireSessionUsername();
   if (getSessionUser() !== sessionUser) {
-    setSessionUser(sessionUser);
+    await setSessionUser(sessionUser);
   }
 
   return withTimeline("registerOptions", { userName: sessionUser, capabilities }, async () => {
-    const store = loadStore();
+    const store = await loadStore();
     if (!store.user || store.user.name !== sessionUser) {
       store.user = {
         id: randomUserId(),
         name: sessionUser,
         displayName: sessionUser,
       };
-      saveStore(store);
+      await saveStore(store);
     }
 
     const challenge = randomChallenge();
@@ -552,7 +543,7 @@ export async function registerVerify(credential) {
     }
 
     const transports = response.getTransports?.() || credential.transports || [];
-    const store = loadStore();
+    const store = await loadStore();
     const record = {
       credentialId: authData.credentialId,
       publicKeyCose: authData.credentialPublicKeyCose,
@@ -569,7 +560,7 @@ export async function registerVerify(credential) {
     };
     store.credentials = store.credentials.filter((item) => item.credentialId !== record.credentialId);
     store.credentials.push(record);
-    saveStore(store);
+    await saveStore(store);
 
     return {
       verified: true,
@@ -586,7 +577,7 @@ export async function registerVerify(credential) {
 
 export async function authenticateOptions(capabilities = {}) {
   return withTimeline("authenticateOptions", { capabilities }, async () => {
-    const store = loadStore();
+    const store = await loadStore();
     // Discoverable: não exige credenciais no store local.
     // Assim dá para autenticar no celular com passkey sincronizada (GPM/iCloud)
     // mesmo sem a chave pública cadastrada neste navegador.
@@ -613,7 +604,7 @@ export async function authenticateOptions(capabilities = {}) {
 export async function authenticateVerify(credential) {
   return withTimeline("authenticateVerify", { id: credential?.id }, async () => {
     const expectedChallenge = takeChallenge("authentication");
-    const store = loadStore();
+    const store = await loadStore();
     let stored = store.credentials.find((item) => item.credentialId === credential.id);
 
     const response = credential.response;
@@ -686,7 +677,7 @@ export async function authenticateVerify(credential) {
       else store.credentials.push(stored);
     }
 
-    saveStore(store);
+    await saveStore(store);
 
     return {
       verified: true,
@@ -707,16 +698,16 @@ export async function authenticateVerify(credential) {
   });
 }
 
-export function hasLocalCredentials() {
+export async function hasLocalCredentials() {
   const username = getSessionUser();
   if (!username) return false;
-  const session = getSession(username);
+  const session = await apiGetSession(username);
   return Boolean(session?.credentials?.length);
 }
 
-export function hasVerifiableCredentials() {
+export async function hasVerifiableCredentials() {
   const username = getSessionUser();
   if (!username) return false;
-  const session = getSession(username);
+  const session = await apiGetSession(username);
   return Boolean(session?.credentials?.some((c) => c.publicKeyCose));
 }

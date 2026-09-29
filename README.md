@@ -7,18 +7,21 @@ App web estática no GitHub Pages para validar a hipótese de que **múltiplos a
 | Recurso | URL |
 | --- | --- |
 | App | https://estevaolucena-idw.github.io/ |
+| API (Vercel) | https://poc-passkey-api.vercel.app |
+| Health | https://poc-passkey-api.vercel.app/api/health |
 | Android Digital Asset Links | https://estevaolucena-idw.github.io/.well-known/assetlinks.json |
 | Apple App Site Association | https://estevaolucena-idw.github.io/.well-known/apple-app-site-association |
 | CDN Apple (cache AASA) | https://app-site-association.cdn-apple.com/a/v1/estevaolucena-idw.github.io |
 
 ## O que a app faz
 
-1. **Continuar com passkey** — só aparece se a sessão atual já tem passkey no array mock
+1. **Continuar com passkey** — aparece se a sessão na API já tem passkey cadastrada
 2. **Cadastrar passkey** — `registerOptions` → `create` → `registerVerify`
-3. Servidor mock (`server.js`) com sessões em **array** (add/get/remove/clear); persistência só neste navegador
-4. Painel de metadados + inspetor para respostas dos apps nativos
+3. Cerimônia no browser (`server.js`); usuários/credenciais centralizados na **API Vercel** (`api-client.js` → Blob)
+4. Challenge da cerimônia fica no `sessionStorage` local; o resto é compartilhado entre PC e celular
+5. Painel de metadados + inspetor para respostas dos apps nativos
 
-> Sem backend compartilhado: PC e celular não veem o mesmo array. A passkey no 1Password/Google pode sincronizar à parte.
+Backend: pasta `api-vercel/` (Vercel Functions + Vercel Blob). Override local: `window.__PASSKEY_API_BASE`.
 
 ## Apps liberados
 
