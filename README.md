@@ -13,10 +13,12 @@ App web estática no GitHub Pages para validar a hipótese de que **múltiplos a
 
 ## O que a app faz
 
-1. **Continuar com passkey** — `authenticateOptions` → `navigator.credentials.get` (discoverable) → `authenticateVerify`
-2. **Cadastrar passkey** — `registerOptions` → `navigator.credentials.create` → `registerVerify`
-3. Servidor simulado no navegador (`server.js`) com store em `localStorage`
-4. Painel de metadados + inspetor para colar respostas dos apps nativos
+1. **Continuar com passkey** — só aparece se a sessão atual já tem passkey no array mock
+2. **Cadastrar passkey** — `registerOptions` → `create` → `registerVerify`
+3. Servidor mock (`server.js`) com sessões em **array** (add/get/remove/clear); persistência só neste navegador
+4. Painel de metadados + inspetor para respostas dos apps nativos
+
+> Sem backend compartilhado: PC e celular não veem o mesmo array. A passkey no 1Password/Google pode sincronizar à parte.
 
 ## Apps liberados
 

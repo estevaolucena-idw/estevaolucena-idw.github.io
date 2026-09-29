@@ -1,13 +1,12 @@
 import {
   authenticateOptions,
   authenticateVerify,
+  clearAllSessions,
   clearStore,
-  exportSession,
   getSessionUser,
   getStoreSnapshot,
   hasLocalCredentials,
   hasVerifiableCredentials,
-  importSession,
   listSessionUsernames,
   onTimeline,
   registerOptions,
@@ -44,9 +43,7 @@ const els = {
   btnContinue: $("btn-continue"),
   btnRegister: $("btn-register"),
   btnClear: $("btn-clear"),
-  btnExport: $("btn-export"),
-  btnImport: $("btn-import"),
-  syncPayload: $("sync-payload"),
+  btnClearAll: $("btn-clear-all"),
   btnChangeUser: $("btn-change-user"),
   btnTestAgain: $("btn-test-again"),
   btnSuccessChangeUser: $("btn-success-change-user"),
@@ -254,17 +251,17 @@ function applyFlowUi() {
     els.flowTitle.textContent = "2. Continue ou complete a sessão";
     els.guide.innerHTML = `
       <li>Há passkey(s) anotada(s) para <strong>${username}</strong>, sem chave pública completa.</li>
-      <li><strong>Continuar</strong> tenta a cerimônia; ou <strong>Importar</strong> o export do PC.</li>
+      <li><strong>Continuar</strong> tenta a cerimônia neste aparelho.</li>
       <li><strong>Cadastrar</strong> adiciona outra passkey (ex.: Google além do 1Password).</li>`;
-    setStatus(`Passkey identificada para "${username}" (parcial). Pode continuar ou importar.`, "idle");
+    setStatus(`Passkey identificada para "${username}" (parcial). Pode continuar.`, "idle");
   } else {
     els.flowTitle.textContent = "2. Cadastre uma passkey";
     els.guide.innerHTML = `
       <li>Nenhuma passkey identificada ainda para <strong>${username}</strong> neste navegador.</li>
       <li>Toque em <strong>Cadastrar passkey</strong> (1Password, Google, iCloud, etc.).</li>
-      <li>Se já cadastrou noutro aparelho: <strong>Importar sessão</strong> para liberar o Continuar.</li>`;
+      <li>Vários providers são permitidos; cada cadastro vira um item no array da sessão.</li>`;
     setStatus(
-      `Nenhuma passkey identificada para "${username}". Cadastre ou importe a sessão.`,
+      `Nenhuma passkey identificada para "${username}". Cadastre para continuar.`,
       "idle"
     );
   }
@@ -418,9 +415,9 @@ function showSuccess(kind, verification) {
   setStep(3);
   const user = getSessionUser();
   if (kind === "registration") {
-    els.successDetail.textContent = `Passkey cadastrada para "${user}". Exporte a sessão se for testar em outro aparelho, ou confie na sincronização do gerenciador.`;
+    els.successDetail.textContent = `Passkey cadastrada para "${user}" e salva no array mock deste navegador.`;
   } else if (verification?.verificationMode === "cross-device-assertion") {
-    els.successDetail.textContent = `Cerimônia OK para "${user}" neste aparelho (passkey sincronizada). Assinatura não checada localmente — importe o export do PC para verificação completa.`;
+    els.successDetail.textContent = `Cerimônia OK para "${user}" neste aparelho. Assinatura não checada (sem chave pública nesta sessão mock).`;
   } else {
     els.successDetail.textContent = `Autenticação verificada por completo para "${user}".`;
   }
@@ -555,51 +552,18 @@ els.btnClear.addEventListener("click", () => {
   renderTimeline();
   applyFlowUi();
   setStatus(
-    `Passkeys locais de "${getSessionUser()}" removidas. A passkey no autenticador permanece até você apagar manualmente.`,
+    `Sessão de "${getSessionUser()}" limpa no array mock. A passkey no autenticador permanece.`,
     "idle"
   );
 });
 
-els.btnExport.addEventListener("click", async () => {
-  try {
-    const payload = exportSession();
-    const text = pretty(payload);
-    els.syncPayload.classList.remove("hidden");
-    els.syncPayload.value = text;
-    els.syncPayload.readOnly = true;
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      setStatus("Sessão exportada e copiada para a área de transferência.", "ok");
-    } else {
-      els.syncPayload.select();
-      setStatus("Sessão exportada. Copie o JSON manualmente.", "ok");
-    }
-  } catch (error) {
-    setStatus(pretty(normalizeBrowserError(error)), "err");
-  }
-});
-
-els.btnImport.addEventListener("click", () => {
-  const isOpen = !els.syncPayload.classList.contains("hidden") && !els.syncPayload.readOnly;
-  if (!isOpen) {
-    els.syncPayload.classList.remove("hidden");
-    els.syncPayload.readOnly = false;
-    els.syncPayload.value = "";
-    els.syncPayload.focus();
-    setStatus("Cole o JSON exportado e toque Importar de novo.", "idle");
-    return;
-  }
-  try {
-    const result = importSession(els.syncPayload.value.trim());
-    els.username.value = result.username;
-    applyFlowUi();
-    setStatus(
-      `Importadas ${result.merged} credenciais para "${result.username}" (total ${result.total}). Agora Continuar faz verificação completa.`,
-      "ok"
-    );
-  } catch (error) {
-    setStatus(pretty(normalizeBrowserError(error)), "err");
-  }
+els.btnClearAll.addEventListener("click", () => {
+  if (!confirm("Limpar TODAS as sessões do array mock neste navegador?")) return;
+  clearAllSessions();
+  timeline.length = 0;
+  renderTimeline();
+  applyFlowUi();
+  setStatus("Todas as sessões foram removidas do array mock.", "idle");
 });
 
 els.btnChangeUser.addEventListener("click", () => goToSessionStep());

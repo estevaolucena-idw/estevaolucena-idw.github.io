@@ -81,28 +81,21 @@
         <div id="caps-flow" class="caps" aria-live="polite"></div>
 
         <div class="cross-device panel-inset">
-          <h3>Entre dispositivos / vários providers</h3>
+          <h3>Sessões (array mock)</h3>
           <p class="muted">
-            É normal ter mais de uma passkey (ex.: 1Password no PC e Google no Android).
-            Cada cadastro cria uma credencial nova. Para autenticar neste aparelho sem
-            cadastrar de novo: no PC use <strong>Exportar sessão</strong> e aqui
-            <strong>Importar sessão</strong> — aí o Continuar aparece.
+            As sessões ficam num array no servidor mock deste navegador. Dá para
+            cadastrar várias passkeys por usuário e limpar para testes. Cada
+            aparelho tem o próprio array (sem backend compartilhado).
           </p>
           <div class="actions">
-            <button type="button" class="secondary" id="btn-export">Exportar sessão</button>
-            <button type="button" class="secondary" id="btn-import">Importar sessão</button>
+            <button type="button" class="secondary" id="btn-clear">Limpar usuário atual</button>
+            <button type="button" class="secondary" id="btn-clear-all">Limpar todas as sessões</button>
           </div>
-          <textarea
-            id="sync-payload"
-            class="hidden"
-            placeholder="Cole aqui o JSON exportado de outro dispositivo"
-          ></textarea>
         </div>
 
         <div class="actions">
           <button type="button" id="btn-register">Cadastrar passkey</button>
           <button type="button" id="btn-continue" class="secondary hidden">Continuar com passkey</button>
-          <button type="button" id="btn-clear" class="secondary">Limpar passkeys deste usuário</button>
         </div>
         <div id="status" class="status idle">Pronto.</div>
       </section>

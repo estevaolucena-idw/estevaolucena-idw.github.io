@@ -1,7 +1,6 @@
 /**
- * Servidor simulado no navegador.
- * Contrato alinhado a um backend real: register/authenticate options+verify.
- * Store isolado por username (identificador único da sessão de teste).
+ * Servidor mock no navegador.
+ * Sessões em array (add/get/remove/clear). Persistência local só neste navegador.
  */
 import {
   base64UrlToBuffer,
@@ -11,10 +10,6 @@ import {
   parseAuthenticatorData,
   sha256Hex,
 } from "./decode.js";
-
-const ROOT_KEY = "poc-passkey:root";
-const SESSION_KEY = "poc-passkey:session-user";
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 /** Fingerprints / packages espelhados de .well-known/assetlinks.json */
 const ANDROID_FINGERPRINTS = [
@@ -45,25 +40,19 @@ const ALLOWED_ANDROID_ORIGINS = new Map(
   ])
 );
 
-/**
- * Web: https://<host>
- * Android (WebView/app com DAL): android:apk-key-hash:<sha256-cert-base64url>
- */
 function assertAllowedOrigin(origin) {
   if (origin === location.origin) {
     return { kind: "web", origin };
   }
-
   const android = ALLOWED_ANDROID_ORIGINS.get(origin);
   if (android) {
     return { kind: "android", origin, ...android };
   }
-
   throw pocError("VERIFICATION_FAILED", "Origin não confere.", {
     expected: [location.origin, ...ALLOWED_ANDROID_ORIGINS.keys()],
     got: origin,
     hint: origin?.startsWith("android:apk-key-hash:")
-      ? "Origin de app Android. Inclua o fingerprint deste APK em assetlinks.json e em ALLOWED_ANDROID_ORIGINS."
+      ? "Origin de app Android. Inclua o fingerprint deste APK em assetlinks.json."
       : "Origin inesperado para esta PoC.",
   });
 }
@@ -104,6 +93,116 @@ function normalizeUsername(value) {
   return username;
 }
 
+const SESSION_KEY = "poc-passkey:session-user";
+const SESSIONS_KEY = "poc-passkey:sessions-array";
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Banco mock da PoC: array de sessões em memória.
+ * Persistido em localStorage só para sobreviver a refresh no MESMO navegador.
+ * Não é compartilhado entre dispositivos (GitHub Pages não tem backend).
+ * @type {Array<{ username: string, user: object|null, credentials: array, challenge: object|null }>}
+ */
+let sessions = [];
+let sessionsHydrated = false;
+
+function hydrateSessions() {
+  if (sessionsHydrated) return;
+  sessionsHydrated = true;
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (!raw) {
+      sessions = [];
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    sessions = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    sessions = [];
+  }
+}
+
+function persistSessions() {
+  hydrateSessions();
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+}
+
+function emptySession(username) {
+  return { username, user: null, credentials: [], challenge: null };
+}
+
+/** Lista todas as sessões do array mock. */
+export function listSessions() {
+  hydrateSessions();
+  return sessions.map((s) => ({
+    username: s.username,
+    credentialCount: s.credentials?.length || 0,
+    hasUser: Boolean(s.user),
+  }));
+}
+
+/** Busca sessão por username (ou null). */
+export function getSession(username) {
+  hydrateSessions();
+  return sessions.find((s) => s.username === username) || null;
+}
+
+/** Cria ou devolve a sessão no array. */
+export function ensureSession(username) {
+  hydrateSessions();
+  let session = getSession(username);
+  if (!session) {
+    session = emptySession(username);
+    sessions.push(session);
+    persistSessions();
+  }
+  return session;
+}
+
+/** Substitui campos da sessão e persiste. */
+export function upsertSession(username, patch) {
+  const session = ensureSession(username);
+  Object.assign(session, patch, { username });
+  persistSessions();
+  return session;
+}
+
+/** Remove uma sessão do array. */
+export function removeSession(username) {
+  hydrateSessions();
+  const before = sessions.length;
+  sessions = sessions.filter((s) => s.username !== username);
+  persistSessions();
+  const removed = before !== sessions.length;
+  emitTimeline({
+    route: "removeSession",
+    ok: true,
+    request: { username },
+    response: { removed },
+    durationMs: 0,
+    at: new Date().toISOString(),
+  });
+  return removed;
+}
+
+/** Limpa todo o array de sessões (útil para testes). */
+export function clearAllSessions() {
+  hydrateSessions();
+  const count = sessions.length;
+  const usernames = sessions.map((s) => s.username);
+  sessions = [];
+  persistSessions();
+  emitTimeline({
+    route: "clearAllSessions",
+    ok: true,
+    request: null,
+    response: { cleared: count, usernames },
+    durationMs: 0,
+    at: new Date().toISOString(),
+  });
+  return { cleared: count, usernames };
+}
+
 export function getSessionUser() {
   try {
     return sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY) || "";
@@ -116,7 +215,7 @@ export function setSessionUser(rawUsername) {
   const username = normalizeUsername(rawUsername);
   sessionStorage.setItem(SESSION_KEY, username);
   localStorage.setItem(SESSION_KEY, username);
-  ensureUserBucket(username);
+  ensureSession(username);
   emitTimeline({
     route: "setSessionUser",
     ok: true,
@@ -130,35 +229,6 @@ export function setSessionUser(rawUsername) {
 
 export function clearSessionUser() {
   sessionStorage.removeItem(SESSION_KEY);
-  // mantém localStorage para reabrir o último usuário usado
-}
-
-function loadRoot() {
-  try {
-    const raw = localStorage.getItem(ROOT_KEY);
-    if (!raw) return { sessions: {} };
-    const parsed = JSON.parse(raw);
-    return { sessions: parsed.sessions || {} };
-  } catch {
-    return { sessions: {} };
-  }
-}
-
-function saveRoot(root) {
-  localStorage.setItem(ROOT_KEY, JSON.stringify({ sessions: root.sessions }));
-}
-
-function emptyBucket() {
-  return { user: null, credentials: [], challenge: null };
-}
-
-function ensureUserBucket(username) {
-  const root = loadRoot();
-  if (!root.sessions[username]) {
-    root.sessions[username] = emptyBucket();
-    saveRoot(root);
-  }
-  return root.sessions[username];
 }
 
 function requireSessionUsername() {
@@ -171,45 +241,50 @@ function requireSessionUsername() {
 
 function loadStore() {
   const username = requireSessionUsername();
-  const bucket = ensureUserBucket(username);
-  return { username, ...bucket };
+  const session = ensureSession(username);
+  return {
+    username: session.username,
+    user: session.user,
+    credentials: session.credentials,
+    challenge: session.challenge,
+  };
 }
 
 function saveStore(store) {
-  const root = loadRoot();
-  root.sessions[store.username] = {
+  upsertSession(store.username, {
     user: store.user,
     credentials: store.credentials,
     challenge: store.challenge,
-  };
-  saveRoot(root);
+  });
 }
 
 export function listSessionUsernames() {
-  return Object.keys(loadRoot().sessions).sort();
+  return listSessions().map((s) => s.username).sort();
 }
 
 export function getStoreSnapshot() {
+  hydrateSessions();
   const username = getSessionUser();
   if (!username) {
-    return { sessionUser: null, users: [], credentials: [], challenge: null };
+    return { sessionUser: null, credentials: [], challenge: null, sessions: listSessions() };
   }
-  const store = ensureUserBucket(username);
+  const session = ensureSession(username);
   return {
     sessionUser: username,
-    user: store.user,
-    credentials: store.credentials,
-    challenge: store.challenge
+    user: session.user,
+    credentials: session.credentials,
+    challenge: session.challenge
       ? {
-          type: store.challenge.type,
-          expiresAt: store.challenge.expiresAt,
-          expired: store.challenge.expiresAt < Date.now(),
+          type: session.challenge.type,
+          expiresAt: session.challenge.expiresAt,
+          expired: session.challenge.expiresAt < Date.now(),
         }
       : null,
-    allSessions: listSessionUsernames(),
+    sessions: listSessions(),
   };
 }
 
+/** Limpa passkeys/sessão do usuário atual no array mock. */
 export function clearStore() {
   const username = getSessionUser();
   if (!username) {
@@ -221,11 +296,9 @@ export function clearStore() {
       durationMs: 0,
       at: new Date().toISOString(),
     });
-    return;
+    return { cleared: false };
   }
-  const root = loadRoot();
-  root.sessions[username] = emptyBucket();
-  saveRoot(root);
+  upsertSession(username, { user: null, credentials: [], challenge: null });
   emitTimeline({
     route: "clearStore",
     ok: true,
@@ -234,6 +307,7 @@ export function clearStore() {
     durationMs: 0,
     at: new Date().toISOString(),
   });
+  return { cleared: true, username };
 }
 
 function randomChallenge() {
@@ -626,85 +700,23 @@ export async function authenticateVerify(credential) {
         originInfo,
         note:
           verificationMode === "cross-device-assertion"
-            ? "Cerimônia OK neste aparelho. Importe o export do dispositivo de cadastro para verificar a assinatura criptográfica."
+            ? "Cerimônia OK neste aparelho. Sem chave pública nesta sessão mock — cadastre aqui ou use o mesmo navegador do cadastro para verificação completa."
             : null,
       },
     };
   });
 }
 
-/** Pacote portável da sessão (chaves públicas) para colar em outro dispositivo. */
-export function exportSession() {
-  const username = requireSessionUsername();
-  const bucket = ensureUserBucket(username);
-  if (!bucket.credentials.length) {
-    throw pocError("CREDENTIAL_NOT_FOUND", "Nada para exportar: cadastre uma passkey neste dispositivo primeiro.");
-  }
-  const payload = {
-    version: 1,
-    rpId: location.hostname,
-    username,
-    user: bucket.user,
-    credentials: bucket.credentials,
-    exportedAt: new Date().toISOString(),
-  };
-  emitTimeline({
-    route: "exportSession",
-    ok: true,
-    request: { username },
-    response: { credentialCount: payload.credentials.length },
-    durationMs: 0,
-    at: new Date().toISOString(),
-  });
-  return payload;
-}
-
-export function importSession(raw) {
-  const payload = typeof raw === "string" ? JSON.parse(raw) : raw;
-  if (!payload || payload.version !== 1 || !payload.username || !Array.isArray(payload.credentials)) {
-    throw pocError("INVALID_IMPORT", "JSON de export inválido.");
-  }
-  if (payload.rpId && payload.rpId !== location.hostname) {
-    throw pocError("INVALID_IMPORT", `rpId do export (${payload.rpId}) difere deste site (${location.hostname}).`);
-  }
-
-  const username = setSessionUser(payload.username);
-  const store = loadStore();
-  if (payload.user) store.user = payload.user;
-
-  let merged = 0;
-  for (const cred of payload.credentials) {
-    if (!cred?.credentialId || !cred?.publicKeyCose) continue;
-    const idx = store.credentials.findIndex((item) => item.credentialId === cred.credentialId);
-    if (idx >= 0) {
-      store.credentials[idx] = { ...store.credentials[idx], ...cred, username };
-    } else {
-      store.credentials.push({ ...cred, username });
-    }
-    merged += 1;
-  }
-  saveStore(store);
-
-  emitTimeline({
-    route: "importSession",
-    ok: true,
-    request: { username, credentialCount: payload.credentials.length },
-    response: { merged, username },
-    durationMs: 0,
-    at: new Date().toISOString(),
-  });
-
-  return { username, merged, total: store.credentials.length };
-}
-
 export function hasLocalCredentials() {
   const username = getSessionUser();
   if (!username) return false;
-  return ensureUserBucket(username).credentials.length > 0;
+  const session = getSession(username);
+  return Boolean(session?.credentials?.length);
 }
 
 export function hasVerifiableCredentials() {
   const username = getSessionUser();
   if (!username) return false;
-  return ensureUserBucket(username).credentials.some((c) => c.publicKeyCose);
+  const session = getSession(username);
+  return Boolean(session?.credentials?.some((c) => c.publicKeyCose));
 }
