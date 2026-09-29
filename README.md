@@ -50,9 +50,21 @@ Team ID `55V4KQ8R32`:
 4. Na web: cadastrar → autenticar → inspecionar metadados.
 5. Em cada app nativo: `rpId = estevaolucena-idw.github.io`, create/get, colar JSON no inspetor.
 
-## Matriz de resultados
+## Validação automática (deploy)
 
-Preencher durante os testes:
+Conferido em 2026-09-29:
+
+| Check | Resultado |
+| --- | --- |
+| Site `https://estevaolucena-idw.github.io/` | HTTP 200 |
+| `assetlinks.json` | HTTP 200, `application/json` |
+| `apple-app-site-association` | HTTP 200 (GitHub serve como `application/octet-stream`) |
+| Digital Asset Links API (`get_login_creds`) | 5 statements (app1–app5) |
+| CDN Apple AASA | HTTP 200, JSON com os 5 app IDs |
+
+## Matriz de resultados (cerimônias)
+
+Preencher nos testes manuais (web + apps nativos com `rpId = estevaolucena-idw.github.io`):
 
 | App | create ok | get ok | origin | erro |
 | --- | --- | --- | --- | --- |
