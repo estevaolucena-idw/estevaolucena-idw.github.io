@@ -81,12 +81,12 @@
         <div id="caps-flow" class="caps" aria-live="polite"></div>
 
         <div class="cross-device panel-inset">
-          <h3>Entre dispositivos</h3>
+          <h3>Entre dispositivos / vários providers</h3>
           <p class="muted">
-            Cadastre no PC com a mesma conta Google/Apple. No celular, use o
-            <strong>mesmo nome de usuário</strong> e toque em Continuar — a passkey
-            sincronizada deve aparecer. Para verificação criptográfica completa neste
-            navegador, exporte no PC e importe aqui.
+            É normal ter mais de uma passkey (ex.: 1Password no PC e Google no Android).
+            Cada cadastro cria uma credencial nova. Para autenticar neste aparelho sem
+            cadastrar de novo: no PC use <strong>Exportar sessão</strong> e aqui
+            <strong>Importar sessão</strong> — aí o Continuar aparece.
           </p>
           <div class="actions">
             <button type="button" class="secondary" id="btn-export">Exportar sessão</button>
@@ -100,8 +100,8 @@
         </div>
 
         <div class="actions">
-          <button type="button" id="btn-register" class="hidden">Cadastrar passkey</button>
-          <button type="button" id="btn-continue" class="secondary">Continuar com passkey</button>
+          <button type="button" id="btn-register">Cadastrar passkey</button>
+          <button type="button" id="btn-continue" class="secondary hidden">Continuar com passkey</button>
           <button type="button" id="btn-clear" class="secondary">Limpar passkeys deste usuário</button>
         </div>
         <div id="status" class="status idle">Pronto.</div>
