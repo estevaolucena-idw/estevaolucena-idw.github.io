@@ -513,13 +513,9 @@ export async function registerVerify(credential) {
 export async function authenticateOptions(capabilities = {}) {
   return withTimeline("authenticateOptions", { capabilities }, async () => {
     const store = loadStore();
-    if (!store.credentials.length) {
-      throw pocError(
-        "CREDENTIAL_NOT_FOUND",
-        `Nenhuma Passkey cadastrada para o usuário "${store.username}" neste navegador.`
-      );
-    }
-
+    // Discoverable: não exige credenciais no store local.
+    // Assim dá para autenticar no celular com passkey sincronizada (GPM/iCloud)
+    // mesmo sem a chave pública cadastrada neste navegador.
     const challenge = randomChallenge();
     setChallenge("authentication", challenge);
 
@@ -528,6 +524,8 @@ export async function authenticateOptions(capabilities = {}) {
       timeout: 120000,
       rpId: location.hostname,
       userVerification: "required",
+      localCredentialCount: store.credentials.length,
+      crossDeviceHint: store.credentials.length === 0,
     };
 
     if (capabilities.platformAuthenticator) {
@@ -542,14 +540,7 @@ export async function authenticateVerify(credential) {
   return withTimeline("authenticateVerify", { id: credential?.id }, async () => {
     const expectedChallenge = takeChallenge("authentication");
     const store = loadStore();
-    const stored = store.credentials.find((item) => item.credentialId === credential.id);
-    if (!stored) {
-      throw pocError(
-        "CREDENTIAL_NOT_FOUND",
-        `Credencial não encontrada para o usuário "${store.username}".`,
-        { id: credential.id }
-      );
-    }
+    let stored = store.credentials.find((item) => item.credentialId === credential.id);
 
     const response = credential.response;
     const clientData = decodeClientDataJSON(response.clientDataJSON);
@@ -579,36 +570,141 @@ export async function authenticateVerify(credential) {
       });
     }
 
-    const ok = await verifyAssertionSignature(
-      stored.publicKeyCose,
-      response.authenticatorData,
-      response.clientDataJSON,
-      response.signature
-    );
-    if (!ok) {
-      throw pocError("VERIFICATION_FAILED", "Assinatura da Passkey inválida.");
+    let verificationMode = "full";
+    let signatureVerified = false;
+
+    if (stored?.publicKeyCose) {
+      const ok = await verifyAssertionSignature(
+        stored.publicKeyCose,
+        response.authenticatorData,
+        response.clientDataJSON,
+        response.signature
+      );
+      if (!ok) {
+        throw pocError("VERIFICATION_FAILED", "Assinatura da Passkey inválida.");
+      }
+      signatureVerified = true;
+      stored.counter = authData.signCount;
+      stored.lastUsedAt = new Date().toISOString();
+      stored.lastOrigin = originInfo;
+    } else {
+      // Passkey veio de outro dispositivo (sync do gerenciador) sem chave pública local.
+      // Validamos a cerimônia (challenge/origin/rpId/UV); a assinatura exige importar o export.
+      verificationMode = "cross-device-assertion";
+      signatureVerified = false;
+      stored = {
+        credentialId: credential.id,
+        publicKeyCose: null,
+        publicKey: null,
+        counter: authData.signCount,
+        transports: credential.response?.transports || [],
+        aaguid: null,
+        deviceType: authData.flags.BS ? "multiDevice" : "singleDevice",
+        backedUp: Boolean(authData.flags.BE && authData.flags.BS),
+        createdAt: null,
+        lastUsedAt: new Date().toISOString(),
+        username: store.username,
+        lastOrigin: originInfo,
+        notedFromCrossDevice: true,
+      };
+      const idx = store.credentials.findIndex((item) => item.credentialId === credential.id);
+      if (idx >= 0) store.credentials[idx] = { ...store.credentials[idx], ...stored };
+      else store.credentials.push(stored);
     }
 
-    stored.counter = authData.signCount;
-    stored.lastUsedAt = new Date().toISOString();
-    stored.lastOrigin = originInfo;
     saveStore(store);
 
     return {
       verified: true,
+      verificationMode,
+      signatureVerified,
       credential: stored,
       metadata: {
         clientData,
         authenticatorData: authData,
         expectedRpHash,
         originInfo,
+        note:
+          verificationMode === "cross-device-assertion"
+            ? "Cerimônia OK neste aparelho. Importe o export do dispositivo de cadastro para verificar a assinatura criptográfica."
+            : null,
       },
     };
   });
+}
+
+/** Pacote portável da sessão (chaves públicas) para colar em outro dispositivo. */
+export function exportSession() {
+  const username = requireSessionUsername();
+  const bucket = ensureUserBucket(username);
+  if (!bucket.credentials.length) {
+    throw pocError("CREDENTIAL_NOT_FOUND", "Nada para exportar: cadastre uma passkey neste dispositivo primeiro.");
+  }
+  const payload = {
+    version: 1,
+    rpId: location.hostname,
+    username,
+    user: bucket.user,
+    credentials: bucket.credentials,
+    exportedAt: new Date().toISOString(),
+  };
+  emitTimeline({
+    route: "exportSession",
+    ok: true,
+    request: { username },
+    response: { credentialCount: payload.credentials.length },
+    durationMs: 0,
+    at: new Date().toISOString(),
+  });
+  return payload;
+}
+
+export function importSession(raw) {
+  const payload = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!payload || payload.version !== 1 || !payload.username || !Array.isArray(payload.credentials)) {
+    throw pocError("INVALID_IMPORT", "JSON de export inválido.");
+  }
+  if (payload.rpId && payload.rpId !== location.hostname) {
+    throw pocError("INVALID_IMPORT", `rpId do export (${payload.rpId}) difere deste site (${location.hostname}).`);
+  }
+
+  const username = setSessionUser(payload.username);
+  const store = loadStore();
+  if (payload.user) store.user = payload.user;
+
+  let merged = 0;
+  for (const cred of payload.credentials) {
+    if (!cred?.credentialId || !cred?.publicKeyCose) continue;
+    const idx = store.credentials.findIndex((item) => item.credentialId === cred.credentialId);
+    if (idx >= 0) {
+      store.credentials[idx] = { ...store.credentials[idx], ...cred, username };
+    } else {
+      store.credentials.push({ ...cred, username });
+    }
+    merged += 1;
+  }
+  saveStore(store);
+
+  emitTimeline({
+    route: "importSession",
+    ok: true,
+    request: { username, credentialCount: payload.credentials.length },
+    response: { merged, username },
+    durationMs: 0,
+    at: new Date().toISOString(),
+  });
+
+  return { username, merged, total: store.credentials.length };
 }
 
 export function hasLocalCredentials() {
   const username = getSessionUser();
   if (!username) return false;
   return ensureUserBucket(username).credentials.length > 0;
+}
+
+export function hasVerifiableCredentials() {
+  const username = getSessionUser();
+  if (!username) return false;
+  return ensureUserBucket(username).credentials.some((c) => c.publicKeyCose);
 }

@@ -363,9 +363,26 @@ pre,
   font-size: 1.35rem;
 }
 
-.diagnostics summary {
-  cursor: pointer;
-  font-weight: 600;
+.panel-inset {
+  margin: 0 0 1rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: #121a26;
+}
+
+.panel-inset h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+}
+
+.panel-inset .actions {
+  margin-top: 0.65rem;
+}
+
+.panel-inset textarea {
+  margin-top: 0.65rem;
+  min-height: 100px;
 }
 
 .hidden {

@@ -80,6 +80,25 @@
 
         <div id="caps-flow" class="caps" aria-live="polite"></div>
 
+        <div class="cross-device panel-inset">
+          <h3>Entre dispositivos</h3>
+          <p class="muted">
+            Cadastre no PC com a mesma conta Google/Apple. No celular, use o
+            <strong>mesmo nome de usuário</strong> e toque em Continuar — a passkey
+            sincronizada deve aparecer. Para verificação criptográfica completa neste
+            navegador, exporte no PC e importe aqui.
+          </p>
+          <div class="actions">
+            <button type="button" class="secondary" id="btn-export">Exportar sessão</button>
+            <button type="button" class="secondary" id="btn-import">Importar sessão</button>
+          </div>
+          <textarea
+            id="sync-payload"
+            class="hidden"
+            placeholder="Cole aqui o JSON exportado de outro dispositivo"
+          ></textarea>
+        </div>
+
         <div class="actions">
           <button type="button" id="btn-register" class="hidden">Cadastrar passkey</button>
           <button type="button" id="btn-continue" class="secondary">Continuar com passkey</button>

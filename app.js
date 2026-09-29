@@ -2,9 +2,12 @@ import {
   authenticateOptions,
   authenticateVerify,
   clearStore,
+  exportSession,
   getSessionUser,
   getStoreSnapshot,
   hasLocalCredentials,
+  hasVerifiableCredentials,
+  importSession,
   listSessionUsernames,
   onTimeline,
   registerOptions,
@@ -41,6 +44,9 @@ const els = {
   btnContinue: $("btn-continue"),
   btnRegister: $("btn-register"),
   btnClear: $("btn-clear"),
+  btnExport: $("btn-export"),
+  btnImport: $("btn-import"),
+  syncPayload: $("sync-payload"),
   btnChangeUser: $("btn-change-user"),
   btnTestAgain: $("btn-test-again"),
   btnSuccessChangeUser: $("btn-success-change-user"),
@@ -217,37 +223,37 @@ function applyFlowUi() {
   els.btnRegister.disabled = false;
 
   const hasCreds = hasLocalCredentials();
-  if (hasCreds) {
-    els.btnRegister.classList.add("hidden");
-    els.btnContinue.classList.remove("secondary");
+  const hasKeys = hasVerifiableCredentials();
+
+  // Continuar sempre disponível: passkey pode ter sincronizado de outro device
+  els.btnContinue.classList.remove("secondary");
+  els.btnRegister.classList.toggle("hidden", hasKeys);
+
+  if (hasKeys) {
     els.flowTitle.textContent = "2. Continue com sua passkey";
     els.guide.innerHTML = `
-      <li>Há passkey salva para <strong>${username}</strong> neste navegador.</li>
+      <li>Há chave pública local para <strong>${username}</strong> (verificação completa).</li>
       <li>Toque em <strong>Continuar com passkey</strong>.</li>
-      <li>Confirme com biometria ou bloqueio de tela.</li>`;
-    setStatus(
-      capabilities.platformAuthenticator
-        ? "Pronto para autenticar neste aparelho."
-        : "Pronto para autenticar (pode abrir hybrid/QR se não houver plataforma).",
-      "idle"
-    );
+      <li>Para testar em outro aparelho: <strong>Exportar sessão</strong> e abra o site lá com o mesmo usuário.</li>`;
+    setStatus("Pronto para autenticar com verificação criptográfica completa.", "idle");
+  } else if (hasCreds) {
+    els.btnRegister.classList.remove("hidden");
+    els.flowTitle.textContent = "2. Continue (cross-device) ou cadastre";
+    els.guide.innerHTML = `
+      <li>Há registro parcial neste navegador, sem chave pública.</li>
+      <li><strong>Continuar</strong> usa a passkey do gerenciador (sync).</li>
+      <li>Ou <strong>Importar sessão</strong> do PC para verificação completa.</li>`;
+    setStatus("Modo cross-device: continue com a passkey sincronizada ou importe o export.", "idle");
   } else {
     els.btnRegister.classList.remove("hidden");
     els.btnContinue.classList.add("secondary");
-    els.flowTitle.textContent = "2. Cadastre uma passkey";
-    els.guide.innerHTML = capabilities.platformAuthenticator
-      ? `
-      <li>Este aparelho suporta passkey de plataforma.</li>
-      <li>Toque em <strong>Cadastrar passkey</strong>.</li>
-      <li>Escolha salvar <em>neste dispositivo</em> (não use o QR de outro celular).</li>`
-      : `
-      <li>Sem autenticador de plataforma detectado.</li>
-      <li>O cadastro pode pedir chave de segurança ou outro aparelho.</li>
-      <li>Toque em <strong>Cadastrar passkey</strong> para tentar mesmo assim.</li>`;
+    els.flowTitle.textContent = "2. Cadastre ou continue de outro dispositivo";
+    els.guide.innerHTML = `
+      <li><strong>Neste aparelho:</strong> Cadastrar passkey (conta Google/Apple logada ajuda a sincronizar).</li>
+      <li><strong>Já cadastrou no PC?</strong> Use o mesmo usuário e toque Continuar — a passkey sincronizada deve aparecer.</li>
+      <li><strong>Verificação completa:</strong> no PC, Exportar sessão → neste aparelho, Importar.</li>`;
     setStatus(
-      capabilities.platformAuthenticator
-        ? `Usuário "${username}" sem passkey local. Cadastre neste aparelho.`
-        : `Usuário "${username}" sem passkey local. Cadastro pode usar hybrid.`,
+      `Usuário "${username}" sem chave local. Cadastre aqui ou continue se a passkey já sincronizou.`,
       "idle"
     );
   }
@@ -287,34 +293,41 @@ function base64UrlToBuffer(value) {
   return bytes.buffer;
 }
 
-function prepareCreateOptions(options) {
-  return {
-    publicKey: {
-      ...options,
-      challenge: base64UrlToBuffer(options.challenge),
-      user: {
-        ...options.user,
-        id: base64UrlToBuffer(options.user.id),
-      },
-      excludeCredentials: (options.excludeCredentials || []).map((cred) => ({
-        ...cred,
-        id: base64UrlToBuffer(cred.id),
-      })),
-    },
+function prepareGetOptions(options) {
+  const {
+    localCredentialCount: _count,
+    crossDeviceHint: _hint,
+    hints,
+    ...publicKeyFields
+  } = options;
+  const publicKey = {
+    ...publicKeyFields,
+    challenge: base64UrlToBuffer(options.challenge),
+    allowCredentials: (options.allowCredentials || []).map((cred) => ({
+      ...cred,
+      id: base64UrlToBuffer(cred.id),
+    })),
   };
+  if (hints) publicKey.hints = hints;
+  return { publicKey };
 }
 
-function prepareGetOptions(options) {
-  return {
-    publicKey: {
-      ...options,
-      challenge: base64UrlToBuffer(options.challenge),
-      allowCredentials: (options.allowCredentials || []).map((cred) => ({
-        ...cred,
-        id: base64UrlToBuffer(cred.id),
-      })),
+function prepareCreateOptions(options) {
+  const { hints, ...rest } = options;
+  const publicKey = {
+    ...rest,
+    challenge: base64UrlToBuffer(options.challenge),
+    user: {
+      ...options.user,
+      id: base64UrlToBuffer(options.user.id),
     },
+    excludeCredentials: (options.excludeCredentials || []).map((cred) => ({
+      ...cred,
+      id: base64UrlToBuffer(cred.id),
+    })),
   };
+  if (hints) publicKey.hints = hints;
+  return { publicKey };
 }
 
 function serializeCredential(credential) {
@@ -374,6 +387,8 @@ async function showCeremonyMeta(kind, options, credential, verification) {
     decoded,
     verification: {
       verified: verification.verified,
+      verificationMode: verification.verificationMode || "full",
+      signatureVerified: verification.signatureVerified !== false,
       credential: verification.credential,
       metadata: verification.metadata,
     },
@@ -388,13 +403,16 @@ function normalizeBrowserError(error) {
   };
 }
 
-function showSuccess(kind) {
+function showSuccess(kind, verification) {
   setStep(3);
   const user = getSessionUser();
-  els.successDetail.textContent =
-    kind === "registration"
-      ? `Passkey cadastrada e verificada para "${user}". Pode seguir ou testar de novo.`
-      : `Autenticação verificada para "${user}". Pode seguir.`;
+  if (kind === "registration") {
+    els.successDetail.textContent = `Passkey cadastrada para "${user}". Exporte a sessão se for testar em outro aparelho, ou confie na sincronização do gerenciador.`;
+  } else if (verification?.verificationMode === "cross-device-assertion") {
+    els.successDetail.textContent = `Cerimônia OK para "${user}" neste aparelho (passkey sincronizada). Assinatura não checada localmente — importe o export do PC para verificação completa.`;
+  } else {
+    els.successDetail.textContent = `Autenticação verificada por completo para "${user}".`;
+  }
 }
 
 async function runRegister() {
@@ -426,7 +444,7 @@ async function runRegister() {
     const verification = await registerVerify(serialized);
     await showCeremonyMeta("registration", options, serialized, verification);
     setStatus("Passkey cadastrada e verificada.", "ok");
-    showSuccess("registration");
+    showSuccess("registration", verification);
   } catch (error) {
     const normalized = normalizeBrowserError(error);
     setStatus(pretty({ ...normalized, sessionUser: getSessionUser(), capabilities }), "err");
@@ -468,7 +486,15 @@ async function runAuthenticate() {
     setStatus("Verificando autenticação…", "idle");
     const verification = await authenticateVerify(serialized);
     await showCeremonyMeta("authentication", options, serialized, verification);
-    showSuccess("authentication");
+    if (verification.verificationMode === "cross-device-assertion") {
+      setStatus(
+        "Cerimônia cross-device OK (sem chave pública local). Importe o export para verificação completa.",
+        "ok"
+      );
+    } else {
+      setStatus("Autenticação verificada.", "ok");
+    }
+    showSuccess("authentication", verification);
   } catch (error) {
     const normalized = normalizeBrowserError(error);
     setStatus(pretty({ ...normalized, sessionUser: getSessionUser(), capabilities }), "err");
@@ -521,6 +547,48 @@ els.btnClear.addEventListener("click", () => {
     `Passkeys locais de "${getSessionUser()}" removidas. A passkey no autenticador permanece até você apagar manualmente.`,
     "idle"
   );
+});
+
+els.btnExport.addEventListener("click", async () => {
+  try {
+    const payload = exportSession();
+    const text = pretty(payload);
+    els.syncPayload.classList.remove("hidden");
+    els.syncPayload.value = text;
+    els.syncPayload.readOnly = true;
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      setStatus("Sessão exportada e copiada para a área de transferência.", "ok");
+    } else {
+      els.syncPayload.select();
+      setStatus("Sessão exportada. Copie o JSON manualmente.", "ok");
+    }
+  } catch (error) {
+    setStatus(pretty(normalizeBrowserError(error)), "err");
+  }
+});
+
+els.btnImport.addEventListener("click", () => {
+  const isOpen = !els.syncPayload.classList.contains("hidden") && !els.syncPayload.readOnly;
+  if (!isOpen) {
+    els.syncPayload.classList.remove("hidden");
+    els.syncPayload.readOnly = false;
+    els.syncPayload.value = "";
+    els.syncPayload.focus();
+    setStatus("Cole o JSON exportado e toque Importar de novo.", "idle");
+    return;
+  }
+  try {
+    const result = importSession(els.syncPayload.value.trim());
+    els.username.value = result.username;
+    applyFlowUi();
+    setStatus(
+      `Importadas ${result.merged} credenciais para "${result.username}" (total ${result.total}). Agora Continuar faz verificação completa.`,
+      "ok"
+    );
+  } catch (error) {
+    setStatus(pretty(normalizeBrowserError(error)), "err");
+  }
 });
 
 els.btnChangeUser.addEventListener("click", () => goToSessionStep());
