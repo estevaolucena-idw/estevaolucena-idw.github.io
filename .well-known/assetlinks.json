@@ -1,0 +1,67 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.idwall.sdk.webview.app1",
+      "sha256_cert_fingerprints": [
+        "4C:AB:A3:7A:62:20:D2:AA:B0:C9:A6:D1:10:94:97:C2:52:53:18:6F:3C:F1:52:77:27:91:D1:0C:D6:48:17:15"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.idwall.sdk.webview.app2",
+      "sha256_cert_fingerprints": [
+        "3D:C5:06:AD:57:56:F9:26:94:4C:B8:70:75:07:AE:17:EA:A0:BE:8B:7D:12:3D:C1:45:4B:BB:2A:88:86:C1:D3"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.idwall.sdk.webview.app3",
+      "sha256_cert_fingerprints": [
+        "FA:E1:14:07:AC:F1:B3:9A:36:73:07:D2:88:05:EB:A5:60:20:30:11:46:8F:E1:F8:C9:88:F8:FA:33:04:36:A7"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.idwall.sdk.webview.app4",
+      "sha256_cert_fingerprints": [
+        "BC:C9:14:C3:87:61:0F:56:55:B0:A5:F3:E9:67:D4:C5:E3:81:1C:36:14:CB:1D:8E:4B:80:8D:1C:59:32:81:EA"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.idwall.sdk.webview.app5",
+      "sha256_cert_fingerprints": [
+        "5A:9C:15:28:24:FB:DB:23:D8:AB:7C:EF:70:84:87:3B:FA:16:D9:69:41:58:0F:DF:9C:0A:BA:D8:D2:24:35:EC"
+      ]
+    }
+  }
+]

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoC Passkey — estevaolucena-idw.github.io</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header>
+        <h1>PoC Passkey</h1>
+        <p>
+          Fluxo completo de cadastro e autenticação WebAuthn no GitHub Pages, com servidor
+          simulado no navegador. Os arquivos
+          <code>.well-known</code> na raiz liberam os apps nativos (Android/iOS) para o mesmo
+          rpID.
+        </p>
+        <div class="meta-line">
+          rpID: <span id="rp-id">…</span> · origin: <span id="origin">…</span>
+        </div>
+      </header>
+
+      <section class="panel" id="flow-panel">
+        <h2>Fluxo</h2>
+        <div class="actions">
+          <button type="button" id="btn-continue">Continuar com passkey</button>
+          <button type="button" id="btn-register" class="secondary hidden">
+            Cadastrar passkey
+          </button>
+          <button type="button" id="btn-clear" class="secondary">Limpar registro local</button>
+        </div>
+        <div id="status" class="status idle">Pronto.</div>
+      </section>
+
+      <section class="panel success-screen hidden" id="success-panel">
+        <h2>Autenticado, pode seguir</h2>
+        <p class="muted">A cerimônia foi verificada pelo servidor simulado neste navegador.</p>
+        <div class="actions" style="justify-content: center; margin-top: 1rem">
+          <button type="button" class="secondary" onclick="location.reload()">Voltar</button>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <div class="panel">
+          <h2>Timeline (rotas do servidor simulado)</h2>
+          <div id="timeline" class="timeline"></div>
+        </div>
+        <div class="panel">
+          <h2>Store local</h2>
+          <pre id="store-view" class="json">{}</pre>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Última cerimônia (metadados)</h2>
+        <p class="muted">
+          options, clientDataJSON, authenticatorData (flags), attestation/COSE e resultado da
+          verificação.
+        </p>
+        <pre id="last-meta" class="json">{}</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Inspetor de resposta externa</h2>
+        <p class="muted">
+          Cole o JSON de resposta de um app nativo (create/get). O painel mostra
+          <code>origin</code>, <code>rpIdHash</code> e flags.
+        </p>
+        <textarea
+          id="inspector-input"
+          placeholder='{"id":"...","type":"public-key","response":{"clientDataJSON":"...","authenticatorData":"...","signature":"..."}}'
+        ></textarea>
+        <div class="actions" style="margin-top: 0.75rem">
+          <button type="button" id="btn-inspect">Inspecionar</button>
+        </div>
+        <pre id="inspector-out" class="json" style="margin-top: 0.75rem">{}</pre>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
