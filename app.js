@@ -92,10 +92,20 @@ function setStep(n) {
 }
 
 function refreshStore() {
-  els.storeView.textContent = pretty(getStoreSnapshot());
-  const hasCreds = hasLocalCredentials();
-  els.credBadge.textContent = hasCreds ? "com passkey" : "sem passkey";
-  els.credBadge.className = `badge ${hasCreds ? "ok" : ""}`;
+  const snap = getStoreSnapshot();
+  els.storeView.textContent = pretty(snap);
+  const count = snap.credentials?.length || 0;
+  const verifiable = (snap.credentials || []).filter((c) => c.publicKeyCose).length;
+  if (count === 0) {
+    els.credBadge.textContent = "sem passkey";
+    els.credBadge.className = "badge";
+  } else {
+    els.credBadge.textContent =
+      verifiable === count
+        ? `${count} passkey(s)`
+        : `${count} passkey(s) · ${verifiable} verificável(is)`;
+    els.credBadge.className = "badge ok";
+  }
 }
 
 function renderTimeline() {
@@ -207,7 +217,7 @@ function applyFlowUi() {
     setStatus("Contexto inseguro: WebAuthn exige HTTPS (ou localhost).", "err");
     els.btnContinue.disabled = true;
     els.btnRegister.disabled = true;
-    els.btnRegister.classList.add("hidden");
+    els.btnContinue.classList.add("hidden");
     return;
   }
 
@@ -215,45 +225,46 @@ function applyFlowUi() {
     setStatus("Este navegador não expõe WebAuthn.", "err");
     els.btnContinue.disabled = true;
     els.btnRegister.disabled = true;
-    els.btnRegister.classList.add("hidden");
+    els.btnContinue.classList.add("hidden");
     return;
   }
 
-  els.btnContinue.disabled = false;
   els.btnRegister.disabled = false;
+  els.btnRegister.classList.remove("hidden");
 
   const hasCreds = hasLocalCredentials();
   const hasKeys = hasVerifiableCredentials();
+  const snap = getStoreSnapshot();
+  const count = snap.credentials?.length || 0;
 
-  // Continuar sempre disponível: passkey pode ter sincronizado de outro device
-  els.btnContinue.classList.remove("secondary");
-  els.btnRegister.classList.toggle("hidden", hasKeys);
+  // Continuar só quando já identificamos passkey(s) para este usuário neste navegador
+  els.btnContinue.classList.toggle("hidden", !hasCreds);
+  els.btnContinue.disabled = !hasCreds;
 
   if (hasKeys) {
+    els.btnContinue.classList.remove("secondary");
     els.flowTitle.textContent = "2. Continue com sua passkey";
     els.guide.innerHTML = `
-      <li>Há chave pública local para <strong>${username}</strong> (verificação completa).</li>
-      <li>Toque em <strong>Continuar com passkey</strong>.</li>
-      <li>Para testar em outro aparelho: <strong>Exportar sessão</strong> e abra o site lá com o mesmo usuário.</li>`;
-    setStatus("Pronto para autenticar com verificação criptográfica completa.", "idle");
+      <li>Identificadas <strong>${count}</strong> passkey(s) para <strong>${username}</strong>.</li>
+      <li>Toque em <strong>Continuar com passkey</strong> para autenticar.</li>
+      <li><strong>Cadastrar</strong> de novo cria outra credencial (outro provider/dispositivo é ok).</li>`;
+    setStatus(`Passkey identificada para "${username}". Pode continuar.`, "idle");
   } else if (hasCreds) {
-    els.btnRegister.classList.remove("hidden");
-    els.flowTitle.textContent = "2. Continue (cross-device) ou cadastre";
+    els.btnContinue.classList.remove("secondary");
+    els.flowTitle.textContent = "2. Continue ou complete a sessão";
     els.guide.innerHTML = `
-      <li>Há registro parcial neste navegador, sem chave pública.</li>
-      <li><strong>Continuar</strong> usa a passkey do gerenciador (sync).</li>
-      <li>Ou <strong>Importar sessão</strong> do PC para verificação completa.</li>`;
-    setStatus("Modo cross-device: continue com a passkey sincronizada ou importe o export.", "idle");
+      <li>Há passkey(s) anotada(s) para <strong>${username}</strong>, sem chave pública completa.</li>
+      <li><strong>Continuar</strong> tenta a cerimônia; ou <strong>Importar</strong> o export do PC.</li>
+      <li><strong>Cadastrar</strong> adiciona outra passkey (ex.: Google além do 1Password).</li>`;
+    setStatus(`Passkey identificada para "${username}" (parcial). Pode continuar ou importar.`, "idle");
   } else {
-    els.btnRegister.classList.remove("hidden");
-    els.btnContinue.classList.add("secondary");
-    els.flowTitle.textContent = "2. Cadastre ou continue de outro dispositivo";
+    els.flowTitle.textContent = "2. Cadastre uma passkey";
     els.guide.innerHTML = `
-      <li><strong>Neste aparelho:</strong> Cadastrar passkey (conta Google/Apple logada ajuda a sincronizar).</li>
-      <li><strong>Já cadastrou no PC?</strong> Use o mesmo usuário e toque Continuar — a passkey sincronizada deve aparecer.</li>
-      <li><strong>Verificação completa:</strong> no PC, Exportar sessão → neste aparelho, Importar.</li>`;
+      <li>Nenhuma passkey identificada ainda para <strong>${username}</strong> neste navegador.</li>
+      <li>Toque em <strong>Cadastrar passkey</strong> (1Password, Google, iCloud, etc.).</li>
+      <li>Se já cadastrou noutro aparelho: <strong>Importar sessão</strong> para liberar o Continuar.</li>`;
     setStatus(
-      `Usuário "${username}" sem chave local. Cadastre aqui ou continue se a passkey já sincronizou.`,
+      `Nenhuma passkey identificada para "${username}". Cadastre ou importe a sessão.`,
       "idle"
     );
   }
