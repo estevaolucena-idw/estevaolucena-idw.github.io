@@ -66,6 +66,18 @@ header p {
   font-size: 1.05rem;
 }
 
+.caps {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.caps .badge {
+  margin-right: 0.35rem;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

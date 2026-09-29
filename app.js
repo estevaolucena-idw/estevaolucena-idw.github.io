@@ -19,6 +19,7 @@ const $ = (id) => document.getElementById(id);
 
 const els = {
   status: $("status"),
+  caps: $("caps"),
   btnContinue: $("btn-continue"),
   btnRegister: $("btn-register"),
   btnClear: $("btn-clear"),
@@ -34,7 +35,114 @@ const els = {
   origin: $("origin"),
 };
 
+/** @type {{ webauthn: boolean, platformAuthenticator: boolean, conditionalMediation: boolean, crossPlatformOnly: boolean, userAgent: string }} */
+let capabilities = {
+  webauthn: false,
+  platformAuthenticator: false,
+  conditionalMediation: false,
+  crossPlatformOnly: false,
+  userAgent: navigator.userAgent,
+};
+
 const timeline = [];
+
+async function probeCapabilities() {
+  const webauthn = Boolean(window.PublicKeyCredential);
+  let platformAuthenticator = false;
+  let conditionalMediation = false;
+
+  if (webauthn && typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === "function") {
+    try {
+      platformAuthenticator = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    } catch {
+      platformAuthenticator = false;
+    }
+  }
+
+  if (webauthn && typeof PublicKeyCredential.isConditionalMediationAvailable === "function") {
+    try {
+      conditionalMediation = await PublicKeyCredential.isConditionalMediationAvailable();
+    } catch {
+      conditionalMediation = false;
+    }
+  }
+
+  capabilities = {
+    webauthn,
+    platformAuthenticator,
+    conditionalMediation,
+    // Sem UV platform: ainda dá para tentar security key / hybrid
+    crossPlatformOnly: webauthn && !platformAuthenticator,
+    userAgent: navigator.userAgent,
+  };
+  return capabilities;
+}
+
+function renderCapabilities() {
+  if (!els.caps) return;
+  const rows = [
+    ["WebAuthn", capabilities.webauthn],
+    ["Autenticador de plataforma (neste aparelho)", capabilities.platformAuthenticator],
+    ["Mediação condicional", capabilities.conditionalMediation],
+    ["Somente cross-platform / hybrid", capabilities.crossPlatformOnly],
+  ];
+  els.caps.innerHTML = rows
+    .map(
+      ([label, value]) =>
+        `<div><span class="badge ${value ? "ok" : "err"}">${value ? "sim" : "não"}</span> ${label}</div>`
+    )
+    .join("");
+}
+
+function applyCapabilityUi() {
+  renderCapabilities();
+
+  if (!window.isSecureContext) {
+    setStatus("Contexto inseguro: WebAuthn exige HTTPS (ou localhost).", "err");
+    els.btnContinue.disabled = true;
+    els.btnRegister.disabled = true;
+    els.btnRegister.classList.add("hidden");
+    return;
+  }
+
+  if (!capabilities.webauthn) {
+    setStatus("Este navegador não expõe PublicKeyCredential (WebAuthn indisponível).", "err");
+    els.btnContinue.disabled = true;
+    els.btnRegister.disabled = true;
+    els.btnRegister.classList.add("hidden");
+    return;
+  }
+
+  els.btnContinue.disabled = false;
+  els.btnRegister.disabled = false;
+
+  if (hasLocalCredentials()) {
+    els.btnRegister.classList.add("hidden");
+    setStatus(
+      capabilities.platformAuthenticator
+        ? 'Há passkey no store local. Use "Continuar com passkey" (prioridade: este aparelho).'
+        : 'Há passkey no store local. Use "Continuar com passkey".',
+      "idle"
+    );
+    return;
+  }
+
+  // Sem store local: oferecer cadastro de forma explícita conforme capacidade
+  els.btnRegister.classList.remove("hidden");
+  if (capabilities.platformAuthenticator) {
+    setStatus(
+      'Este aparelho tem autenticador de plataforma. Use "Cadastrar passkey" para criar neste dispositivo (Face ID / impressão digital / bloqueio de tela).',
+      "idle"
+    );
+  } else if (capabilities.crossPlatformOnly) {
+    setStatus(
+      'Sem autenticador de plataforma detectado. O cadastro pode pedir chave de segurança ou outro aparelho (hybrid/QR).',
+      "idle"
+    );
+  } else {
+    setStatus('WebAuthn disponível. Use "Cadastrar passkey".', "idle");
+  }
+}
 
 function setStatus(message, kind = "idle") {
   els.status.textContent = message;
@@ -180,6 +288,7 @@ async function showCeremonyMeta(kind, options, credential, verification) {
 
   const payload = {
     kind,
+    capabilities,
     options,
     expectedRpId: location.hostname,
     expectedRpHash,
@@ -218,12 +327,28 @@ async function runRegister() {
   els.btnContinue.disabled = true;
   setStatus("Gerando options de cadastro…", "idle");
   try {
-    const options = await registerOptions(`poc-${location.hostname}`);
-    setStatus("Aguardando cerimônia create no autenticador…", "idle");
+    if (!capabilities.webauthn) {
+      throw Object.assign(new Error("WebAuthn não suportado neste navegador."), {
+        code: "BROWSER_ERROR",
+      });
+    }
+    if (!capabilities.platformAuthenticator && !capabilities.crossPlatformOnly) {
+      throw Object.assign(
+        new Error("Nenhum autenticador utilizável detectado neste dispositivo."),
+        { code: "BROWSER_ERROR", details: capabilities }
+      );
+    }
+
+    const options = await registerOptions(`poc-${location.hostname}`, capabilities);
+    setStatus(
+      capabilities.platformAuthenticator
+        ? "Aguardando passkey neste aparelho (plataforma)…"
+        : "Aguardando cerimônia create no autenticador…",
+      "idle"
+    );
     const credential = await navigator.credentials.create(prepareCreateOptions(options));
     if (!credential) throw new Error("Cerimônia cancelada (create retornou null).");
     const serialized = serializeCredential(credential);
-    // Reanexar buffers para verificação + getTransports
     serialized.response.clientDataJSON = credential.response.clientDataJSON;
     serialized.response.attestationObject = credential.response.attestationObject;
     serialized.response.getTransports = () => credential.response.getTransports?.() || [];
@@ -235,11 +360,16 @@ async function runRegister() {
     showSuccess();
   } catch (error) {
     const normalized = normalizeBrowserError(error);
-    setStatus(pretty(normalized), "err");
-    els.lastMeta.textContent = pretty({ error: normalized });
-    if (normalized.code === "NotAllowedError" || normalized.code === "BROWSER_ERROR") {
-      els.btnRegister.classList.remove("hidden");
-    }
+    setStatus(pretty({ ...normalized, capabilities }), "err");
+    els.lastMeta.textContent = pretty({
+      error: normalized,
+      capabilities,
+      optionsHint: {
+        authenticatorAttachment: capabilities.platformAuthenticator ? "platform" : undefined,
+        hints: capabilities.platformAuthenticator ? ["client-device"] : undefined,
+      },
+    });
+    els.btnRegister.classList.remove("hidden");
   } finally {
     els.btnRegister.disabled = false;
     els.btnContinue.disabled = false;
@@ -252,14 +382,19 @@ async function runAuthenticate() {
   els.btnContinue.disabled = true;
   setStatus("Gerando options de autenticação…", "idle");
   try {
-    if (!window.PublicKeyCredential) {
+    if (!capabilities.webauthn) {
       throw Object.assign(new Error("WebAuthn não suportado neste navegador."), {
         code: "BROWSER_ERROR",
       });
     }
 
-    const options = await authenticateOptions();
-    setStatus("Aguardando cerimônia get no autenticador…", "idle");
+    const options = await authenticateOptions(capabilities);
+    setStatus(
+      capabilities.platformAuthenticator
+        ? "Aguardando passkey neste aparelho…"
+        : "Aguardando cerimônia get no autenticador…",
+      "idle"
+    );
     const credential = await navigator.credentials.get(prepareGetOptions(options));
     if (!credential) throw new Error("Cerimônia cancelada (get retornou null).");
 
@@ -275,8 +410,8 @@ async function runAuthenticate() {
     showSuccess();
   } catch (error) {
     const normalized = normalizeBrowserError(error);
-    setStatus(pretty(normalized), "err");
-    els.lastMeta.textContent = pretty({ error: normalized });
+    setStatus(pretty({ ...normalized, capabilities }), "err");
+    els.lastMeta.textContent = pretty({ error: normalized, capabilities });
 
     const needsRegister =
       normalized.code === "CREDENTIAL_NOT_FOUND" ||
@@ -284,10 +419,12 @@ async function runAuthenticate() {
       normalized.code === "InvalidStateError" ||
       !hasLocalCredentials();
 
-    if (needsRegister) {
+    if (needsRegister && capabilities.webauthn) {
       els.btnRegister.classList.remove("hidden");
       setStatus(
-        `${pretty(normalized)}\n\nNenhuma passkey utilizável aqui. Use "Cadastrar passkey".`,
+        `${pretty(normalized)}\n\nNenhuma passkey utilizável aqui. Use "Cadastrar passkey"${
+          capabilities.platformAuthenticator ? " (neste aparelho)." : "."
+        }`,
         "err"
       );
     }
@@ -315,8 +452,14 @@ els.btnClear.addEventListener("click", () => {
   refreshStore();
   els.lastMeta.textContent = "{}";
   showFlow();
-  els.btnRegister.classList.add("hidden");
-  setStatus("Store local limpo. A passkey no autenticador permanece.", "idle");
+  applyCapabilityUi();
+  setStatus(
+    "Store local limpo. A passkey no autenticador permanece. " +
+      (capabilities.platformAuthenticator
+        ? 'Use "Cadastrar passkey" para criar neste aparelho.'
+        : 'Use "Cadastrar passkey".'),
+    "idle"
+  );
 });
 
 els.btnInspect.addEventListener("click", async () => {
@@ -339,21 +482,9 @@ async function boot() {
   els.origin.textContent = location.origin;
   refreshStore();
   renderTimeline();
-
-  if (!window.isSecureContext) {
-    setStatus("Contexto inseguro: WebAuthn exige HTTPS (ou localhost).", "err");
-    els.btnContinue.disabled = true;
-    els.btnRegister.disabled = true;
-    return;
-  }
-
-  if (hasLocalCredentials()) {
-    els.btnRegister.classList.add("hidden");
-    setStatus('Há passkey no store local. Use "Continuar com passkey".', "idle");
-  } else {
-    els.btnRegister.classList.remove("hidden");
-    setStatus('Nenhuma passkey no store. Use "Continuar" (pode falhar) ou "Cadastrar".', "idle");
-  }
+  await probeCapabilities();
+  applyCapabilityUi();
+  els.lastMeta.textContent = pretty({ capabilities });
 }
 
 boot();

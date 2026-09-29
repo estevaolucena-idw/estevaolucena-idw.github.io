@@ -159,8 +159,8 @@ async function withTimeline(route, request, action) {
   }
 }
 
-export async function registerOptions(userName = "poc-user") {
-  return withTimeline("registerOptions", { userName }, async () => {
+export async function registerOptions(userName = "poc-user", capabilities = {}) {
+  return withTimeline("registerOptions", { userName, capabilities }, async () => {
     const store = loadStore();
     let user = store.users.find((item) => item.name === userName);
     if (!user) {
@@ -178,7 +178,22 @@ export async function registerOptions(userName = "poc-user") {
       transports: cred.transports,
     }));
 
-    return {
+    const preferPlatform = Boolean(capabilities.platformAuthenticator);
+    const authenticatorSelection = {
+      // preferred: mais compatível em mobile; ainda pede credencial discoverable (passkey)
+      residentKey: preferPlatform ? "required" : "preferred",
+      requireResidentKey: preferPlatform,
+      userVerification: "required",
+    };
+
+    // Sem attachment, Chrome/Safari mobile tendem a sugerir hybrid/QR em vez do aparelho atual.
+    if (preferPlatform) {
+      authenticatorSelection.authenticatorAttachment = "platform";
+    } else if (capabilities.crossPlatformOnly) {
+      authenticatorSelection.authenticatorAttachment = "cross-platform";
+    }
+
+    const options = {
       challenge,
       rp: {
         name: "PoC Passkey",
@@ -193,15 +208,18 @@ export async function registerOptions(userName = "poc-user") {
         { type: "public-key", alg: -7 },
         { type: "public-key", alg: -257 },
       ],
-      timeout: 60000,
+      timeout: 120000,
       attestation: "none",
       excludeCredentials,
-      authenticatorSelection: {
-        residentKey: "required",
-        requireResidentKey: true,
-        userVerification: "required",
-      },
+      authenticatorSelection,
     };
+
+    // WebAuthn Level 3 — Chrome usa para priorizar passkey neste dispositivo
+    if (preferPlatform) {
+      options.hints = ["client-device"];
+    }
+
+    return options;
   });
 }
 
@@ -346,8 +364,8 @@ export async function registerVerify(credential) {
   });
 }
 
-export async function authenticateOptions() {
-  return withTimeline("authenticateOptions", {}, async () => {
+export async function authenticateOptions(capabilities = {}) {
+  return withTimeline("authenticateOptions", { capabilities }, async () => {
     const store = loadStore();
     if (!store.credentials.length) {
       throw pocError("CREDENTIAL_NOT_FOUND", "Nenhuma Passkey cadastrada neste navegador.");
@@ -356,13 +374,19 @@ export async function authenticateOptions() {
     const challenge = randomChallenge();
     setChallenge("authentication", challenge);
 
-    return {
+    const options = {
       challenge,
-      timeout: 60000,
+      timeout: 120000,
       rpId: location.hostname,
       // Discoverable: sem allowCredentials
       userVerification: "required",
     };
+
+    if (capabilities.platformAuthenticator) {
+      options.hints = ["client-device"];
+    }
+
+    return options;
   });
 }
 
