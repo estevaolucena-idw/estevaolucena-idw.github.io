@@ -4,10 +4,10 @@
       {
         "appIDs": [
           "55V4KQ8R32.com.webview-app-ios",
-          "55V4KQ8R32.com.webview-app-ios.app2",
-          "55V4KQ8R32.com.webview-app-ios.app3",
-          "55V4KQ8R32.com.webview-app-ios.app4",
-          "55V4KQ8R32.com.webview-app-ios.app5"
+          "55V4KQ8R32.com.webview-app-ios-2",
+          "55V4KQ8R32.com.webview-app-ios-3",
+          "55V4KQ8R32.com.webview-app-ios-4",
+          "55V4KQ8R32.com.webview-app-ios-5"
         ],
         "components": [
           {
@@ -20,10 +20,10 @@
   "webcredentials": {
     "apps": [
       "55V4KQ8R32.com.webview-app-ios",
-      "55V4KQ8R32.com.webview-app-ios.app2",
-      "55V4KQ8R32.com.webview-app-ios.app3",
-      "55V4KQ8R32.com.webview-app-ios.app4",
-      "55V4KQ8R32.com.webview-app-ios.app5"
+      "55V4KQ8R32.com.webview-app-ios-2",
+      "55V4KQ8R32.com.webview-app-ios-3",
+      "55V4KQ8R32.com.webview-app-ios-4",
+      "55V4KQ8R32.com.webview-app-ios-5"
     ]
   }
 }

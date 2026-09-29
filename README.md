@@ -39,10 +39,10 @@ Relations: `handle_all_urls` + `get_login_creds`.
 Team ID `55V4KQ8R32`:
 
 - `55V4KQ8R32.com.webview-app-ios`
-- `55V4KQ8R32.com.webview-app-ios.app2`
-- `55V4KQ8R32.com.webview-app-ios.app3`
-- `55V4KQ8R32.com.webview-app-ios.app4`
-- `55V4KQ8R32.com.webview-app-ios.app5`
+- `55V4KQ8R32.com.webview-app-ios-2`
+- `55V4KQ8R32.com.webview-app-ios-3`
+- `55V4KQ8R32.com.webview-app-ios-4`
+- `55V4KQ8R32.com.webview-app-ios-5`
 
 ## Roteiro de validação
 
@@ -77,10 +77,10 @@ Preencher nos testes manuais (web + apps nativos com `rpId = estevaolucena-idw.g
 | co.idwall.sdk.webview.app4 | | | | |
 | co.idwall.sdk.webview.app5 | | | | |
 | com.webview-app-ios | | | | |
-| com.webview-app-ios.app2 | | | | |
-| com.webview-app-ios.app3 | | | | |
-| com.webview-app-ios.app4 | | | | |
-| com.webview-app-ios.app5 | | | | |
+| com.webview-app-ios-2 | | | | |
+| com.webview-app-ios-3 | | | | |
+| com.webview-app-ios-4 | | | | |
+| com.webview-app-ios-5 | | | | |
 
 ## Desenvolvimento local
 
