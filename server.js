@@ -16,6 +16,58 @@ const ROOT_KEY = "poc-passkey:root";
 const SESSION_KEY = "poc-passkey:session-user";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
+/** Fingerprints / packages espelhados de .well-known/assetlinks.json */
+const ANDROID_FINGERPRINTS = [
+  "4C:AB:A3:7A:62:20:D2:AA:B0:C9:A6:D1:10:94:97:C2:52:53:18:6F:3C:F1:52:77:27:91:D1:0C:D6:48:17:15",
+  "3D:C5:06:AD:57:56:F9:26:94:4C:B8:70:75:07:AE:17:EA:A0:BE:8B:7D:12:3D:C1:45:4B:BB:2A:88:86:C1:D3",
+  "FA:E1:14:07:AC:F1:B3:9A:36:73:07:D2:88:05:EB:A5:60:20:30:11:46:8F:E1:F8:C9:88:F8:FA:33:04:36:A7",
+  "BC:C9:14:C3:87:61:0F:56:55:B0:A5:F3:E9:67:D4:C5:E3:81:1C:36:14:CB:1D:8E:4B:80:8D:1C:59:32:81:EA",
+  "5A:9C:15:28:24:FB:DB:23:D8:AB:7C:EF:70:84:87:3B:FA:16:D9:69:41:58:0F:DF:9C:0A:BA:D8:D2:24:35:EC",
+];
+
+const ANDROID_PACKAGES = [
+  "co.idwall.sdk.webview.app1",
+  "co.idwall.sdk.webview.app2",
+  "co.idwall.sdk.webview.app3",
+  "co.idwall.sdk.webview.app4",
+  "co.idwall.sdk.webview.app5",
+];
+
+function fingerprintToApkKeyHash(fingerprint) {
+  const bytes = Uint8Array.from(fingerprint.split(":").map((part) => parseInt(part, 16)));
+  return bufferToBase64Url(bytes);
+}
+
+const ALLOWED_ANDROID_ORIGINS = new Map(
+  ANDROID_FINGERPRINTS.map((fp, index) => [
+    `android:apk-key-hash:${fingerprintToApkKeyHash(fp)}`,
+    { packageName: ANDROID_PACKAGES[index], fingerprint: fp },
+  ])
+);
+
+/**
+ * Web: https://<host>
+ * Android (WebView/app com DAL): android:apk-key-hash:<sha256-cert-base64url>
+ */
+function assertAllowedOrigin(origin) {
+  if (origin === location.origin) {
+    return { kind: "web", origin };
+  }
+
+  const android = ALLOWED_ANDROID_ORIGINS.get(origin);
+  if (android) {
+    return { kind: "android", origin, ...android };
+  }
+
+  throw pocError("VERIFICATION_FAILED", "Origin não confere.", {
+    expected: [location.origin, ...ALLOWED_ANDROID_ORIGINS.keys()],
+    got: origin,
+    hint: origin?.startsWith("android:apk-key-hash:")
+      ? "Origin de app Android. Inclua o fingerprint deste APK em assetlinks.json e em ALLOWED_ANDROID_ORIGINS."
+      : "Origin inesperado para esta PoC.",
+  });
+}
+
 /** @type {Array<(entry: object) => void>} */
 const timelineListeners = [];
 
@@ -405,12 +457,7 @@ export async function registerVerify(credential) {
         got: clientData.challenge,
       });
     }
-    if (clientData.origin !== location.origin) {
-      throw pocError("VERIFICATION_FAILED", "Origin não confere.", {
-        expected: location.origin,
-        got: clientData.origin,
-      });
-    }
+    const originInfo = assertAllowedOrigin(clientData.origin);
 
     const attestation = decodeAttestationObject(response.attestationObject);
     const authData = attestation.authenticatorData;
@@ -444,6 +491,7 @@ export async function registerVerify(credential) {
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
       username: store.username,
+      registeredOrigin: originInfo,
     };
     store.credentials = store.credentials.filter((item) => item.credentialId !== record.credentialId);
     store.credentials.push(record);
@@ -456,6 +504,7 @@ export async function registerVerify(credential) {
         clientData,
         attestation,
         expectedRpHash,
+        originInfo,
       },
     };
   });
@@ -514,13 +563,8 @@ export async function authenticateVerify(credential) {
         got: clientData.challenge,
       });
     }
-    if (clientData.origin !== location.origin) {
-      throw pocError("VERIFICATION_FAILED", "Origin não confere.", {
-        expected: location.origin,
-        got: clientData.origin,
-      });
-    }
 
+    const originInfo = assertAllowedOrigin(clientData.origin);
     const authData = parseAuthenticatorData(response.authenticatorData);
     const expectedRpHash = await sha256Hex(location.hostname);
     if (authData.rpIdHash !== expectedRpHash) {
@@ -547,6 +591,7 @@ export async function authenticateVerify(credential) {
 
     stored.counter = authData.signCount;
     stored.lastUsedAt = new Date().toISOString();
+    stored.lastOrigin = originInfo;
     saveStore(store);
 
     return {
@@ -556,6 +601,7 @@ export async function authenticateVerify(credential) {
         clientData,
         authenticatorData: authData,
         expectedRpHash,
+        originInfo,
       },
     };
   });
