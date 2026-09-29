@@ -28,48 +28,175 @@ body {
 }
 
 .layout {
-  max-width: 1100px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
+  padding: 1.5rem 1rem 3.5rem;
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 header h1 {
   margin: 0 0 0.35rem;
-  font-size: 1.75rem;
+  font-size: 1.65rem;
   letter-spacing: -0.02em;
 }
 
 header p {
   margin: 0;
   color: var(--muted);
-  max-width: 62ch;
+  line-height: 1.45;
 }
 
 .meta-line {
   margin-top: 0.75rem;
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--accent);
+  word-break: break-all;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+  background: #121a26;
+}
+
+.step span {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.step.active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.step.active span {
+  background: var(--accent);
+  color: #041018;
+}
+
+.step.done {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
 }
 
 .panel {
   background: color-mix(in srgb, var(--panel) 92%, black);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1.15rem;
 }
 
-.panel h2 {
-  margin: 0 0 0.75rem;
+.panel h2,
+.panel h3 {
+  margin: 0 0 0.65rem;
   font-size: 1.05rem;
+}
+
+.panel h3 {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+}
+
+.session-form {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1rem 0;
+}
+
+.session-form label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.session-form input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0c121a;
+  color: var(--text);
+  font: inherit;
+  padding: 0.85rem 0.95rem;
+  font-size: 1.05rem;
+}
+
+.session-form input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-color: var(--accent);
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #121a26;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.session-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.92rem;
+}
+
+.guide {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.guide strong {
+  color: var(--text);
 }
 
 .caps {
   display: grid;
   gap: 0.4rem;
-  margin-bottom: 1rem;
+  margin: 0.85rem 0 1rem;
   font-size: 0.85rem;
   color: var(--muted);
 }
@@ -88,7 +215,7 @@ button {
   appearance: none;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 0.7rem 1rem;
+  padding: 0.75rem 1rem;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -100,6 +227,11 @@ button.secondary {
   background: transparent;
   color: var(--text);
   border-color: var(--border);
+}
+
+button.small {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
 }
 
 button:disabled {
@@ -114,7 +246,7 @@ button:disabled {
   background: var(--panel-2);
   border: 1px solid var(--border);
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   white-space: pre-wrap;
 }
 
@@ -138,6 +270,10 @@ button:disabled {
 }
 
 @media (min-width: 900px) {
+  .layout {
+    max-width: 960px;
+  }
+
   .grid-2 {
     grid-template-columns: 1fr 1fr;
   }
@@ -145,7 +281,7 @@ button:disabled {
 
 textarea {
   width: 100%;
-  min-height: 140px;
+  min-height: 120px;
   resize: vertical;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -159,14 +295,14 @@ textarea {
 pre,
 .json {
   margin: 0;
-  max-height: 360px;
+  max-height: 320px;
   overflow: auto;
   background: #0c121a;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.75rem;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -224,7 +360,12 @@ pre,
 
 .success-screen h2 {
   color: var(--ok);
-  font-size: 1.4rem;
+  font-size: 1.35rem;
+}
+
+.diagnostics summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .hidden {

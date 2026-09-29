@@ -17,72 +17,119 @@
       <header>
         <h1>PoC Passkey</h1>
         <p>
-          Fluxo completo de cadastro e autenticação WebAuthn no GitHub Pages, com servidor
-          simulado no navegador. Os arquivos
-          <code>.well-known</code> na raiz liberam os apps nativos (Android/iOS) para o mesmo
-          rpID.
+          Teste o cadastro e a autenticação de Passkey neste domínio. Use um
+          <strong>nome de usuário</strong> para isolar sua sessão de teste.
         </p>
         <div class="meta-line">
           rpID: <span id="rp-id">…</span> · origin: <span id="origin">…</span>
         </div>
       </header>
 
-      <section class="panel" id="flow-panel">
-        <h2>Fluxo</h2>
-        <div id="caps" class="caps" aria-live="polite"></div>
-        <div class="actions">
-          <button type="button" id="btn-continue">Continuar com passkey</button>
-          <button type="button" id="btn-register" class="secondary hidden">
-            Cadastrar passkey
-          </button>
-          <button type="button" id="btn-clear" class="secondary">Limpar registro local</button>
-        </div>
-        <div id="status" class="status idle">Detectando capacidades do dispositivo…</div>
-      </section>
+      <nav class="steps" id="steps" aria-label="Etapas do teste">
+        <div class="step active" data-step="1"><span>1</span> Usuário</div>
+        <div class="step" data-step="2"><span>2</span> Passkey</div>
+        <div class="step" data-step="3"><span>3</span> Resultado</div>
+      </nav>
 
-      <section class="panel success-screen hidden" id="success-panel">
-        <h2>Autenticado, pode seguir</h2>
-        <p class="muted">A cerimônia foi verificada pelo servidor simulado neste navegador.</p>
-        <div class="actions" style="justify-content: center; margin-top: 1rem">
-          <button type="button" class="secondary" onclick="location.reload()">Voltar</button>
-        </div>
-      </section>
-
-      <section class="grid-2">
-        <div class="panel">
-          <h2>Timeline (rotas do servidor simulado)</h2>
-          <div id="timeline" class="timeline"></div>
-        </div>
-        <div class="panel">
-          <h2>Store local</h2>
-          <pre id="store-view" class="json">{}</pre>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Última cerimônia (metadados)</h2>
+      <!-- Etapa 1: sessão -->
+      <section class="panel" id="panel-session">
+        <h2>1. Identifique sua sessão</h2>
         <p class="muted">
-          options, clientDataJSON, authenticatorData (flags), attestation/COSE e resultado da
-          verificação.
+          O nome de usuário é o identificador único desta sessão de teste. Credenciais e
+          challenges ficam isolados por usuário neste navegador.
         </p>
-        <pre id="last-meta" class="json">{}</pre>
+        <form id="form-session" class="session-form">
+          <label for="username">Nome de usuário</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            inputmode="text"
+            maxlength="64"
+            placeholder="ex.: estevao.mobile"
+            required
+            minlength="2"
+          />
+          <p class="hint" id="session-hint">Use o mesmo nome no celular e no desktop para comparar a matriz.</p>
+          <div class="recent" id="recent-users"></div>
+          <div class="actions">
+            <button type="submit" id="btn-start">Continuar</button>
+          </div>
+        </form>
+        <div id="session-error" class="status err hidden" role="alert"></div>
+        <div id="caps" class="caps" aria-live="polite"></div>
       </section>
 
-      <section class="panel">
-        <h2>Inspetor de resposta externa</h2>
+      <!-- Etapa 2: cerimônia -->
+      <section class="panel hidden" id="panel-flow">
+        <div class="session-bar">
+          <div>
+            Sessão: <strong id="session-label">—</strong>
+            <span class="badge" id="cred-badge">sem passkey</span>
+          </div>
+          <button type="button" class="secondary small" id="btn-change-user">Trocar usuário</button>
+        </div>
+
+        <h2 id="flow-title">2. Cadastre ou continue</h2>
+        <ol class="guide" id="guide">
+          <li>Confirme as capacidades do aparelho abaixo.</li>
+          <li>Escolha cadastrar (primeira vez) ou continuar (já tem passkey).</li>
+          <li>Aceite o prompt do sistema (Face ID, digital ou bloqueio de tela).</li>
+        </ol>
+
+        <div id="caps-flow" class="caps" aria-live="polite"></div>
+
+        <div class="actions">
+          <button type="button" id="btn-register" class="hidden">Cadastrar passkey</button>
+          <button type="button" id="btn-continue" class="secondary">Continuar com passkey</button>
+          <button type="button" id="btn-clear" class="secondary">Limpar passkeys deste usuário</button>
+        </div>
+        <div id="status" class="status idle">Pronto.</div>
+      </section>
+
+      <!-- Etapa 3: sucesso -->
+      <section class="panel success-screen hidden" id="panel-success">
+        <h2>Autenticado, pode seguir</h2>
+        <p class="muted" id="success-detail">
+          A cerimônia foi verificada para esta sessão.
+        </p>
+        <div class="actions" style="justify-content: center; margin-top: 1rem">
+          <button type="button" id="btn-test-again">Testar de novo</button>
+          <button type="button" class="secondary" id="btn-success-change-user">Outro usuário</button>
+        </div>
+      </section>
+
+      <details class="panel diagnostics" id="diagnostics">
+        <summary>Diagnóstico (timeline, store, metadados, inspetor)</summary>
+
+        <div class="grid-2" style="margin-top: 1rem">
+          <div>
+            <h3>Timeline</h3>
+            <div id="timeline" class="timeline"></div>
+          </div>
+          <div>
+            <h3>Store local</h3>
+            <pre id="store-view" class="json">{}</pre>
+          </div>
+        </div>
+
+        <h3>Última cerimônia</h3>
+        <pre id="last-meta" class="json">{}</pre>
+
+        <h3>Inspetor de resposta externa</h3>
         <p class="muted">
-          Cole o JSON de resposta de um app nativo (create/get). O painel mostra
-          <code>origin</code>, <code>rpIdHash</code> e flags.
+          Cole o JSON de um app nativo para ver <code>origin</code>, <code>rpIdHash</code> e flags.
         </p>
         <textarea
           id="inspector-input"
-          placeholder='{"id":"...","type":"public-key","response":{"clientDataJSON":"...","authenticatorData":"...","signature":"..."}}'
+          placeholder='{"id":"...","type":"public-key","response":{...}}'
         ></textarea>
         <div class="actions" style="margin-top: 0.75rem">
           <button type="button" id="btn-inspect">Inspecionar</button>
         </div>
         <pre id="inspector-out" class="json" style="margin-top: 0.75rem">{}</pre>
-      </section>
+      </details>
     </main>
     <script type="module" src="./app.js"></script>
   </body>

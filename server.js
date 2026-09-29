@@ -1,7 +1,7 @@
 /**
  * Servidor simulado no navegador.
  * Contrato alinhado a um backend real: register/authenticate options+verify.
- * Verificação via WebCrypto (ES256) — @simplewebauthn/server não roda no browser.
+ * Store isolado por username (identificador único da sessão de teste).
  */
 import {
   base64UrlToBuffer,
@@ -12,7 +12,8 @@ import {
   sha256Hex,
 } from "./decode.js";
 
-const STORE_KEY = "poc-passkey:store";
+const ROOT_KEY = "poc-passkey:root";
+const SESSION_KEY = "poc-passkey:session-user";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 /** @type {Array<(entry: object) => void>} */
@@ -38,36 +39,113 @@ function pocError(code, message, details = null) {
   return error;
 }
 
-function loadStore() {
+function normalizeUsername(value) {
+  const username = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9._@+-]/g, "")
+    .slice(0, 64);
+  if (!username || username.length < 2) {
+    throw pocError("INVALID_USERNAME", "Informe um usuário com pelo menos 2 caracteres válidos.");
+  }
+  return username;
+}
+
+export function getSessionUser() {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return { users: [], credentials: [], challenge: null };
-    const parsed = JSON.parse(raw);
-    return {
-      users: parsed.users || [],
-      credentials: parsed.credentials || [],
-      challenge: parsed.challenge || null,
-    };
+    return sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY) || "";
   } catch {
-    return { users: [], credentials: [], challenge: null };
+    return "";
   }
 }
 
+export function setSessionUser(rawUsername) {
+  const username = normalizeUsername(rawUsername);
+  sessionStorage.setItem(SESSION_KEY, username);
+  localStorage.setItem(SESSION_KEY, username);
+  ensureUserBucket(username);
+  emitTimeline({
+    route: "setSessionUser",
+    ok: true,
+    request: { username },
+    response: { username },
+    durationMs: 0,
+    at: new Date().toISOString(),
+  });
+  return username;
+}
+
+export function clearSessionUser() {
+  sessionStorage.removeItem(SESSION_KEY);
+  // mantém localStorage para reabrir o último usuário usado
+}
+
+function loadRoot() {
+  try {
+    const raw = localStorage.getItem(ROOT_KEY);
+    if (!raw) return { sessions: {} };
+    const parsed = JSON.parse(raw);
+    return { sessions: parsed.sessions || {} };
+  } catch {
+    return { sessions: {} };
+  }
+}
+
+function saveRoot(root) {
+  localStorage.setItem(ROOT_KEY, JSON.stringify({ sessions: root.sessions }));
+}
+
+function emptyBucket() {
+  return { user: null, credentials: [], challenge: null };
+}
+
+function ensureUserBucket(username) {
+  const root = loadRoot();
+  if (!root.sessions[username]) {
+    root.sessions[username] = emptyBucket();
+    saveRoot(root);
+  }
+  return root.sessions[username];
+}
+
+function requireSessionUsername() {
+  const username = getSessionUser();
+  if (!username) {
+    throw pocError("NO_SESSION", "Defina um nome de usuário para iniciar a sessão de teste.");
+  }
+  return username;
+}
+
+function loadStore() {
+  const username = requireSessionUsername();
+  const bucket = ensureUserBucket(username);
+  return { username, ...bucket };
+}
+
 function saveStore(store) {
-  localStorage.setItem(
-    STORE_KEY,
-    JSON.stringify({
-      users: store.users,
-      credentials: store.credentials,
-      challenge: store.challenge,
-    })
-  );
+  const root = loadRoot();
+  root.sessions[store.username] = {
+    user: store.user,
+    credentials: store.credentials,
+    challenge: store.challenge,
+  };
+  saveRoot(root);
+}
+
+export function listSessionUsernames() {
+  return Object.keys(loadRoot().sessions).sort();
 }
 
 export function getStoreSnapshot() {
-  const store = loadStore();
+  const username = getSessionUser();
+  if (!username) {
+    return { sessionUser: null, users: [], credentials: [], challenge: null };
+  }
+  const store = ensureUserBucket(username);
   return {
-    users: store.users,
+    sessionUser: username,
+    user: store.user,
     credentials: store.credentials,
     challenge: store.challenge
       ? {
@@ -76,16 +154,31 @@ export function getStoreSnapshot() {
           expired: store.challenge.expiresAt < Date.now(),
         }
       : null,
+    allSessions: listSessionUsernames(),
   };
 }
 
 export function clearStore() {
-  localStorage.removeItem(STORE_KEY);
+  const username = getSessionUser();
+  if (!username) {
+    emitTimeline({
+      route: "clearStore",
+      ok: true,
+      request: null,
+      response: { cleared: false, reason: "no-session" },
+      durationMs: 0,
+      at: new Date().toISOString(),
+    });
+    return;
+  }
+  const root = loadRoot();
+  root.sessions[username] = emptyBucket();
+  saveRoot(root);
   emitTimeline({
     route: "clearStore",
     ok: true,
-    request: null,
-    response: { cleared: true },
+    request: { username },
+    response: { cleared: true, username },
     durationMs: 0,
     at: new Date().toISOString(),
   });
@@ -159,13 +252,20 @@ async function withTimeline(route, request, action) {
   }
 }
 
-export async function registerOptions(userName = "poc-user", capabilities = {}) {
-  return withTimeline("registerOptions", { userName, capabilities }, async () => {
+export async function registerOptions(userName, capabilities = {}) {
+  const sessionUser = userName ? normalizeUsername(userName) : requireSessionUsername();
+  if (getSessionUser() !== sessionUser) {
+    setSessionUser(sessionUser);
+  }
+
+  return withTimeline("registerOptions", { userName: sessionUser, capabilities }, async () => {
     const store = loadStore();
-    let user = store.users.find((item) => item.name === userName);
-    if (!user) {
-      user = { id: randomUserId(), name: userName, displayName: userName };
-      store.users.push(user);
+    if (!store.user || store.user.name !== sessionUser) {
+      store.user = {
+        id: randomUserId(),
+        name: sessionUser,
+        displayName: sessionUser,
+      };
       saveStore(store);
     }
 
@@ -180,13 +280,11 @@ export async function registerOptions(userName = "poc-user", capabilities = {}) 
 
     const preferPlatform = Boolean(capabilities.platformAuthenticator);
     const authenticatorSelection = {
-      // preferred: mais compatível em mobile; ainda pede credencial discoverable (passkey)
       residentKey: preferPlatform ? "required" : "preferred",
       requireResidentKey: preferPlatform,
       userVerification: "required",
     };
 
-    // Sem attachment, Chrome/Safari mobile tendem a sugerir hybrid/QR em vez do aparelho atual.
     if (preferPlatform) {
       authenticatorSelection.authenticatorAttachment = "platform";
     } else if (capabilities.crossPlatformOnly) {
@@ -200,9 +298,9 @@ export async function registerOptions(userName = "poc-user", capabilities = {}) 
         id: location.hostname,
       },
       user: {
-        id: user.id,
-        name: user.name,
-        displayName: user.displayName,
+        id: store.user.id,
+        name: store.user.name,
+        displayName: store.user.displayName,
       },
       pubKeyCredParams: [
         { type: "public-key", alg: -7 },
@@ -214,7 +312,6 @@ export async function registerOptions(userName = "poc-user", capabilities = {}) 
       authenticatorSelection,
     };
 
-    // WebAuthn Level 3 — Chrome usa para priorizar passkey neste dispositivo
     if (preferPlatform) {
       options.hints = ["client-device"];
     }
@@ -247,7 +344,6 @@ async function importPublicKey(cose) {
   );
 }
 
-/** Converte assinatura DER (ECDSA) para r||s (64 bytes). */
 function derToRaw(signatureDer) {
   const der = new Uint8Array(signatureDer);
   if (der[0] !== 0x30) {
@@ -347,6 +443,7 @@ export async function registerVerify(credential) {
       backedUp: Boolean(authData.flags.BE && authData.flags.BS),
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
+      username: store.username,
     };
     store.credentials = store.credentials.filter((item) => item.credentialId !== record.credentialId);
     store.credentials.push(record);
@@ -368,7 +465,10 @@ export async function authenticateOptions(capabilities = {}) {
   return withTimeline("authenticateOptions", { capabilities }, async () => {
     const store = loadStore();
     if (!store.credentials.length) {
-      throw pocError("CREDENTIAL_NOT_FOUND", "Nenhuma Passkey cadastrada neste navegador.");
+      throw pocError(
+        "CREDENTIAL_NOT_FOUND",
+        `Nenhuma Passkey cadastrada para o usuário "${store.username}" neste navegador.`
+      );
     }
 
     const challenge = randomChallenge();
@@ -378,7 +478,6 @@ export async function authenticateOptions(capabilities = {}) {
       challenge,
       timeout: 120000,
       rpId: location.hostname,
-      // Discoverable: sem allowCredentials
       userVerification: "required",
     };
 
@@ -398,7 +497,7 @@ export async function authenticateVerify(credential) {
     if (!stored) {
       throw pocError(
         "CREDENTIAL_NOT_FOUND",
-        "Credencial não encontrada no store local deste navegador.",
+        `Credencial não encontrada para o usuário "${store.username}".`,
         { id: credential.id }
       );
     }
@@ -463,5 +562,7 @@ export async function authenticateVerify(credential) {
 }
 
 export function hasLocalCredentials() {
-  return loadStore().credentials.length > 0;
+  const username = getSessionUser();
+  if (!username) return false;
+  return ensureUserBucket(username).credentials.length > 0;
 }
