@@ -395,16 +395,12 @@ async function withTimeline(route, request, action) {
     });
     return response;
   } catch (error) {
-    const normalized = {
-      code: error.code || "BROWSER_ERROR",
-      message: error instanceof Error ? error.message : String(error),
-      details: error.details || null,
-    };
+    console.error(`[${route}]`, error);
     emitTimeline({
       route,
       ok: false,
       request,
-      response: normalized,
+      error,
       durationMs: Math.round(performance.now() - started),
       at,
     });

@@ -87,7 +87,33 @@ function setStatus(message, kind = "idle") {
 }
 
 function pretty(value) {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(
+    value,
+    (_key, current) => {
+      if (current instanceof Error) {
+        return {
+          name: current.name,
+          message: current.message,
+          stack: current.stack,
+          ...Object.fromEntries(Object.entries(current)),
+        };
+      }
+      return current;
+    },
+    2
+  );
+}
+
+function logException(error) {
+  console.error(error);
+  return error;
+}
+
+function exceptionText(error) {
+  if (error instanceof Error) {
+    return error.stack || `${error.name}: ${error.message}`;
+  }
+  return String(error);
 }
 
 const WELL_KNOWN = {
@@ -277,8 +303,11 @@ function renderTimeline() {
           <span class="muted">${item.durationMs}ms · ${item.at}</span>
         </header>
         <details>
-          <summary>request / response</summary>
-          <pre class="json">${pretty({ request: item.request, response: item.response })}</pre>
+          <summary>request / ${item.ok ? "response" : "error"}</summary>
+          <pre class="json">${pretty({
+            request: item.request,
+            ...(item.ok ? { response: item.response } : { error: item.error }),
+          })}</pre>
         </details>
       </article>`
     )
@@ -583,14 +612,6 @@ async function showCeremonyMeta(kind, options, credential, verification) {
   });
 }
 
-function normalizeBrowserError(error) {
-  return {
-    code: error.code || error.name || "BROWSER_ERROR",
-    message: error instanceof Error ? error.message : String(error),
-    details: error.details || null,
-  };
-}
-
 function showSuccess(kind, verification) {
   setStep(3);
   const user = getSessionUser();
@@ -634,9 +655,9 @@ async function runRegister() {
     setStatus("Passkey cadastrada e verificada.", "ok");
     showSuccess("registration", verification);
   } catch (error) {
-    const normalized = normalizeBrowserError(error);
-    setStatus(pretty({ ...normalized, sessionUser: getSessionUser(), capabilities }), "err");
-    els.lastMeta.textContent = pretty({ error: normalized, capabilities });
+    logException(error);
+    setStatus(exceptionText(error), "err");
+    els.lastMeta.textContent = pretty({ error });
     els.diagnostics.open = true;
     els.btnRegister.classList.remove("hidden");
   } finally {
@@ -684,24 +705,25 @@ async function runAuthenticate() {
     }
     showSuccess("authentication", verification);
   } catch (error) {
-    const normalized = normalizeBrowserError(error);
-    setStatus(pretty({ ...normalized, sessionUser: getSessionUser(), capabilities }), "err");
-    els.lastMeta.textContent = pretty({ error: normalized, capabilities });
+    logException(error);
+    setStatus(exceptionText(error), "err");
+    els.lastMeta.textContent = pretty({ error });
     els.diagnostics.open = true;
 
     const hasCreds = await hasLocalCredentials().catch(() => false);
+    const errorName = error instanceof Error ? error.name : "";
+    const errorCode = error?.code;
     const needsRegister =
-      normalized.code === "CREDENTIAL_NOT_FOUND" ||
-      normalized.code === "NotAllowedError" ||
-      normalized.code === "InvalidStateError" ||
+      errorCode === "CREDENTIAL_NOT_FOUND" ||
+      errorName === "NotAllowedError" ||
+      errorCode === "NotAllowedError" ||
+      errorName === "InvalidStateError" ||
+      errorCode === "InvalidStateError" ||
       !hasCreds;
 
     if (needsRegister && capabilities.webauthn) {
       els.btnRegister.classList.remove("hidden");
-      setStatus(
-        `${normalized.message}\n\nCadastre uma passkey para "${getSessionUser()}" neste aparelho.`,
-        "err"
-      );
+      setStatus(exceptionText(error), "err");
       await applyFlowUi();
     }
   } finally {
@@ -718,8 +740,8 @@ els.formSession.addEventListener("submit", async (event) => {
     errBox.classList.add("hidden");
     await enterSession(els.username.value);
   } catch (error) {
-    const normalized = normalizeBrowserError(error);
-    errBox.textContent = normalized.message;
+    logException(error);
+    errBox.textContent = exceptionText(error);
     errBox.classList.remove("hidden");
   }
 });
@@ -764,9 +786,9 @@ els.btnInspect.addEventListener("click", async () => {
     setStatus(`Inspetor: ${result.ceremony}, origin=${result.origin}`, "ok");
     els.diagnostics.open = true;
   } catch (error) {
-    const normalized = normalizeBrowserError(error);
-    els.inspectorOut.textContent = pretty(normalized);
-    setStatus(pretty(normalized), "err");
+    logException(error);
+    els.inspectorOut.textContent = exceptionText(error);
+    setStatus(exceptionText(error), "err");
   }
 });
 
