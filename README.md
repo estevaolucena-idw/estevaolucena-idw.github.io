@@ -21,7 +21,9 @@ App web estática no GitHub Pages para validar a hipótese de que **múltiplos a
 4. Challenge da cerimônia fica no `sessionStorage` local; o resto é compartilhado entre PC e celular
 5. Painel de metadados + inspetor para respostas dos apps nativos
 
-Backend: pasta `api-vercel/` (Vercel Functions + Vercel Blob). Override local: `window.__PASSKEY_API_BASE`.
+Backend: projeto irmão `../api-sessions` (Vercel Functions + Vercel Blob). Override local: `window.__PASSKEY_API_BASE`.
+
+> Este diretório local chama-se `web-pages`, mas o **remote GitHub** permanece `estevaolucena-idw.github.io` (exigência do GitHub Pages / rpID).
 
 ## Apps liberados
 
