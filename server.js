@@ -21,48 +21,91 @@ import {
   getApiBase,
 } from "./api-client.js";
 
-/** Fingerprints / packages espelhados de .well-known/assetlinks.json */
-const ANDROID_FINGERPRINTS = [
-  "4C:AB:A3:7A:62:20:D2:AA:B0:C9:A6:D1:10:94:97:C2:52:53:18:6F:3C:F1:52:77:27:91:D1:0C:D6:48:17:15",
-  "3D:C5:06:AD:57:56:F9:26:94:4C:B8:70:75:07:AE:17:EA:A0:BE:8B:7D:12:3D:C1:45:4B:BB:2A:88:86:C1:D3",
-  "FA:E1:14:07:AC:F1:B3:9A:36:73:07:D2:88:05:EB:A5:60:20:30:11:46:8F:E1:F8:C9:88:F8:FA:33:04:36:A7",
-  "BC:C9:14:C3:87:61:0F:56:55:B0:A5:F3:E9:67:D4:C5:E3:81:1C:36:14:CB:1D:8E:4B:80:8D:1C:59:32:81:EA",
-  "5A:9C:15:28:24:FB:DB:23:D8:AB:7C:EF:70:84:87:3B:FA:16:D9:69:41:58:0F:DF:9C:0A:BA:D8:D2:24:35:EC",
-];
+/** Origins Android liberados vêm de /.well-known/assetlinks.json (sem lista mock). */
+const ASSETLINKS_PATH = "/.well-known/assetlinks.json";
+const LOGIN_CREDS_RELATION = "delegate_permission/common.get_login_creds";
+const ASSETLINKS_CACHE_TTL_MS = 30_000;
 
-const ANDROID_PACKAGES = [
-  "co.idwall.sdk.webview.app1",
-  "co.idwall.sdk.webview.app2",
-  "co.idwall.sdk.webview.app3",
-  "co.idwall.sdk.webview.app4",
-  "co.idwall.sdk.webview.app5",
-];
+/** @type {{ at: number, map: Map<string, { packageName: string, fingerprint: string }> | null }} */
+let assetLinksCache = { at: 0, map: null };
 
 function fingerprintToApkKeyHash(fingerprint) {
   const bytes = Uint8Array.from(fingerprint.split(":").map((part) => parseInt(part, 16)));
   return bufferToBase64Url(bytes);
 }
 
-const ALLOWED_ANDROID_ORIGINS = new Map(
-  ANDROID_FINGERPRINTS.map((fp, index) => [
-    `android:apk-key-hash:${fingerprintToApkKeyHash(fp)}`,
-    { packageName: ANDROID_PACKAGES[index], fingerprint: fp },
-  ])
-);
+function buildAndroidOriginsFromAssetLinks(statements) {
+  const map = new Map();
+  if (!Array.isArray(statements)) return map;
 
-function assertAllowedOrigin(origin) {
+  for (const entry of statements) {
+    const relations = entry?.relation || [];
+    const target = entry?.target;
+    if (target?.namespace !== "android_app") continue;
+    if (!relations.includes(LOGIN_CREDS_RELATION)) continue;
+
+    const packageName = target.package_name;
+    const fingerprints = target.sha256_cert_fingerprints || [];
+    for (const fingerprint of fingerprints) {
+      if (!fingerprint || typeof fingerprint !== "string") continue;
+      const origin = `android:apk-key-hash:${fingerprintToApkKeyHash(fingerprint)}`;
+      map.set(origin, { packageName, fingerprint });
+    }
+  }
+  return map;
+}
+
+async function loadAllowedAndroidOrigins({ force = false } = {}) {
+  const fresh =
+    !force &&
+    assetLinksCache.map &&
+    Date.now() - assetLinksCache.at < ASSETLINKS_CACHE_TTL_MS;
+  if (fresh) return assetLinksCache.map;
+
+  const url = new URL(ASSETLINKS_PATH, location.origin).href;
+  let response;
+  try {
+    response = await fetch(url, { cache: "no-store" });
+  } catch (error) {
+    throw pocError("ASSETLINKS_FETCH_FAILED", "Falha ao buscar assetlinks.json.", {
+      url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (!response.ok) {
+    throw pocError("ASSETLINKS_FETCH_FAILED", "assetlinks.json indisponível.", {
+      url,
+      status: response.status,
+    });
+  }
+
+  const statements = await response.json();
+  const map = buildAndroidOriginsFromAssetLinks(statements);
+  assetLinksCache = { at: Date.now(), map };
+  return map;
+}
+
+export async function refreshAllowedAndroidOrigins() {
+  return loadAllowedAndroidOrigins({ force: true });
+}
+
+async function assertAllowedOrigin(origin) {
   if (origin === location.origin) {
     return { kind: "web", origin };
   }
-  const android = ALLOWED_ANDROID_ORIGINS.get(origin);
+
+  const allowed = await loadAllowedAndroidOrigins();
+  const android = allowed.get(origin);
   if (android) {
     return { kind: "android", origin, ...android };
   }
+
   throw pocError("VERIFICATION_FAILED", "Origin não confere.", {
-    expected: [location.origin, ...ALLOWED_ANDROID_ORIGINS.keys()],
+    expected: [location.origin, ...allowed.keys()],
     got: origin,
+    source: ASSETLINKS_PATH,
     hint: origin?.startsWith("android:apk-key-hash:")
-      ? "Origin de app Android. Inclua o fingerprint deste APK em assetlinks.json."
+      ? "Origin de app Android. Inclua package + fingerprint com get_login_creds em assetlinks.json."
       : "Origin inesperado para esta PoC.",
   });
 }
@@ -522,7 +565,7 @@ export async function registerVerify(credential) {
         got: clientData.challenge,
       });
     }
-    const originInfo = assertAllowedOrigin(clientData.origin);
+    const originInfo = await assertAllowedOrigin(clientData.origin);
 
     const attestation = decodeAttestationObject(response.attestationObject);
     const authData = attestation.authenticatorData;
@@ -620,7 +663,7 @@ export async function authenticateVerify(credential) {
       });
     }
 
-    const originInfo = assertAllowedOrigin(clientData.origin);
+    const originInfo = await assertAllowedOrigin(clientData.origin);
     const authData = parseAuthenticatorData(response.authenticatorData);
     const expectedRpHash = await sha256Hex(location.hostname);
     if (authData.rpIdHash !== expectedRpHash) {
