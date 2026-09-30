@@ -1,6 +1,22 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.acme.partner.webview",
+      "sha256_cert_fingerprints": [
+        "16:0C:BD:81:30:9A:1E:12:92:00:C0:F5:B8:42:F0:56:83:76:D1:5E:94:1A:3F:63:79:D4:47:DD:4C:21:B0:8D"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app1",
@@ -10,7 +26,10 @@
     }
   },
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app2",
@@ -20,7 +39,10 @@
     }
   },
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app3",
@@ -30,7 +52,10 @@
     }
   },
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app4",
@@ -40,7 +65,10 @@
     }
   },
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app5",
@@ -50,7 +78,10 @@
     }
   },
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app6",
@@ -60,22 +91,15 @@
     }
   },
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "co.idwall.sdk.webview.app7",
       "sha256_cert_fingerprints": [
         "AC:0A:96:FF:C0:D6:61:73:86:57:B9:40:14:F8:94:94:5D:30:F4:9C:B2:F8:16:20:78:AD:51:69:CA:13:CD:2B"
-      ]
-    }
-  },
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "com.acme.partner.webview",
-      "sha256_cert_fingerprints": [
-        "16:0C:BD:81:30:9A:1E:12:92:00:C0:F5:B8:42:F0:56:83:76:D1:5E:94:1A:3F:63:79:D4:47:DD:4C:21:B0:8D"
       ]
     }
   }

@@ -1,0 +1,26 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "55V4KQ8R32.com.webview-app-ios",
+          "55V4KQ8R32.com.webview-app-ios-2",
+          "55V4KQ8R32.com.webview-app-ios-3",
+          "55V4KQ8R32.com.webview-app-ios-4",
+          "55V4KQ8R32.com.webview-app-ios-5",
+          "55V4KQ8R32.com.webview-app-ios-6"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "55V4KQ8R32.com.webview-app-ios",
+      "55V4KQ8R32.com.webview-app-ios-2",
+      "55V4KQ8R32.com.webview-app-ios-3",
+      "55V4KQ8R32.com.webview-app-ios-4",
+      "55V4KQ8R32.com.webview-app-ios-5",
+      "55V4KQ8R32.com.webview-app-ios-6"
+    ]
+  }
+}
