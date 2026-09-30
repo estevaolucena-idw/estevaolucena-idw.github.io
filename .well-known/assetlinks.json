@@ -58,5 +58,25 @@
         "06:81:4D:F9:2F:1A:0A:D4:CB:9E:6E:90:76:B7:8C:FF:87:16:88:01:E8:0F:1C:BF:7E:38:94:B1:06:EC:D8:2D"
       ]
     }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.idwall.sdk.webview.app7",
+      "sha256_cert_fingerprints": [
+        "AC:0A:96:FF:C0:D6:61:73:86:57:B9:40:14:F8:94:94:5D:30:F4:9C:B2:F8:16:20:78:AD:51:69:CA:13:CD:2B"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.acme.partner.webview",
+      "sha256_cert_fingerprints": [
+        "16:0C:BD:81:30:9A:1E:12:92:00:C0:F5:B8:42:F0:56:83:76:D1:5E:94:1A:3F:63:79:D4:47:DD:4C:21:B0:8D"
+      ]
+    }
   }
 ]
