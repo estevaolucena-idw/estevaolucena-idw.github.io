@@ -57,6 +57,17 @@ const els = {
   inspectorInput: $("inspector-input"),
   inspectorOut: $("inspector-out"),
   diagnostics: $("diagnostics"),
+  wellknown: $("wellknown"),
+  btnWellknownRefresh: $("btn-wellknown-refresh"),
+  wkAssetlinksBadge: $("wk-assetlinks-badge"),
+  wkAssetlinksSummary: $("wk-assetlinks-summary"),
+  wkAssetlinksBody: $("wk-assetlinks-body"),
+  wkAssetlinksLink: $("wk-assetlinks-link"),
+  wkAasaBadge: $("wk-aasa-badge"),
+  wkAasaSummary: $("wk-aasa-summary"),
+  wkAasaBody: $("wk-aasa-body"),
+  wkAasaLink: $("wk-aasa-link"),
+  wkAasaCdnLink: $("wk-aasa-cdn-link"),
 };
 
 /** @type {{ webauthn: boolean, platformAuthenticator: boolean, conditionalMediation: boolean, crossPlatformOnly: boolean, userAgent: string }} */
@@ -77,6 +88,139 @@ function setStatus(message, kind = "idle") {
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
+}
+
+const WELL_KNOWN = {
+  assetlinks: "/.well-known/assetlinks.json",
+  aasa: "/.well-known/apple-app-site-association",
+};
+
+async function fetchWellKnown(path) {
+  const url = new URL(path, location.origin).href;
+  const response = await fetch(url, { cache: "no-store" });
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  return {
+    url,
+    ok: response.ok,
+    status: response.status,
+    contentType,
+    text,
+    json,
+  };
+}
+
+function summarizeAssetLinks(json) {
+  if (!Array.isArray(json)) return ["Formato inesperado (esperado array)."];
+  return json.map((entry, index) => {
+    const pkg = entry?.target?.package_name || "?";
+    const fps = entry?.target?.sha256_cert_fingerprints || [];
+    const relations = (entry?.relation || []).join(", ");
+    const fpShort = fps[0] ? `${String(fps[0]).slice(0, 11)}…` : "sem fingerprint";
+    return `<li><code>${pkg}</code> · ${fps.length} fp · ${fpShort}${
+      relations ? ` · <span class="muted">${relations}</span>` : ""
+    } <span class="muted">(#${index + 1})</span></li>`;
+  });
+}
+
+function summarizeAasa(json) {
+  if (!json || typeof json !== "object") return ["Formato inesperado (esperado objeto JSON)."];
+  const appIds = json?.applinks?.details?.[0]?.appIDs || [];
+  const webcreds = json?.webcredentials?.apps || [];
+  const lines = [];
+  lines.push(
+    `<li>applinks: <strong>${appIds.length}</strong> appID(s)</li>`
+  );
+  appIds.forEach((id) => {
+    lines.push(`<li><code>${id}</code></li>`);
+  });
+  lines.push(
+    `<li>webcredentials: <strong>${webcreds.length}</strong> app(s)</li>`
+  );
+  webcreds.forEach((id) => {
+    if (!appIds.includes(id)) lines.push(`<li><code>${id}</code> <span class="muted">(só webcredentials)</span></li>`);
+  });
+  return lines;
+}
+
+function renderWellKnownResult({ badgeEl, summaryEl, bodyEl, result, summarize }) {
+  if (!result.ok) {
+    badgeEl.textContent = `HTTP ${result.status}`;
+    badgeEl.className = "badge err";
+    summaryEl.innerHTML = `<li>Falha ao carregar <code>${result.url}</code></li>`;
+    bodyEl.textContent = result.text || `(HTTP ${result.status})`;
+    return;
+  }
+
+  badgeEl.textContent = `HTTP ${result.status}`;
+  badgeEl.className = "badge ok";
+  if (result.json == null) {
+    summaryEl.innerHTML = `<li>Resposta não-JSON · <code>${result.contentType || "sem content-type"}</code></li>`;
+    bodyEl.textContent = result.text;
+    return;
+  }
+
+  const items = summarize(result.json);
+  summaryEl.innerHTML =
+    items.join("") +
+    `<li class="muted">content-type: <code>${result.contentType || "—"}</code></li>`;
+  bodyEl.textContent = pretty(result.json);
+}
+
+async function loadWellKnown() {
+  els.wkAssetlinksBadge.textContent = "…";
+  els.wkAssetlinksBadge.className = "badge";
+  els.wkAasaBadge.textContent = "…";
+  els.wkAasaBadge.className = "badge";
+  els.wkAssetlinksBody.textContent = "Carregando…";
+  els.wkAasaBody.textContent = "Carregando…";
+  els.wkAssetlinksSummary.innerHTML = "";
+  els.wkAasaSummary.innerHTML = "";
+
+  const host = location.hostname;
+  els.wkAssetlinksLink.href = WELL_KNOWN.assetlinks;
+  els.wkAasaLink.href = WELL_KNOWN.aasa;
+  els.wkAasaCdnLink.href = `https://app-site-association.cdn-apple.com/a/v1/${host}`;
+
+  const [assetlinks, aasa] = await Promise.all([
+    fetchWellKnown(WELL_KNOWN.assetlinks).catch((error) => ({
+      url: WELL_KNOWN.assetlinks,
+      ok: false,
+      status: 0,
+      contentType: "",
+      text: error instanceof Error ? error.message : String(error),
+      json: null,
+    })),
+    fetchWellKnown(WELL_KNOWN.aasa).catch((error) => ({
+      url: WELL_KNOWN.aasa,
+      ok: false,
+      status: 0,
+      contentType: "",
+      text: error instanceof Error ? error.message : String(error),
+      json: null,
+    })),
+  ]);
+
+  renderWellKnownResult({
+    badgeEl: els.wkAssetlinksBadge,
+    summaryEl: els.wkAssetlinksSummary,
+    bodyEl: els.wkAssetlinksBody,
+    result: assetlinks,
+    summarize: summarizeAssetLinks,
+  });
+  renderWellKnownResult({
+    badgeEl: els.wkAasaBadge,
+    summaryEl: els.wkAasaSummary,
+    bodyEl: els.wkAasaBody,
+    result: aasa,
+    summarize: summarizeAasa,
+  });
 }
 
 function setStep(n) {
@@ -626,12 +770,17 @@ els.btnInspect.addEventListener("click", async () => {
   }
 });
 
+els.btnWellknownRefresh.addEventListener("click", () => {
+  void loadWellKnown();
+});
+
 async function boot() {
   els.rpId.textContent = location.hostname;
   els.origin.textContent = location.origin;
   await probeCapabilities();
   renderCapabilities(els.caps);
   renderTimeline();
+  void loadWellKnown();
   try {
     const health = await checkApiHealth();
     setStatus(`API ok: ${getApiBase()} (${health.storage || "ok"})`, "idle");

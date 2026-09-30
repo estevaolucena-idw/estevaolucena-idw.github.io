@@ -269,12 +269,67 @@ button:disabled {
   gap: 1rem;
 }
 
+.wellknown-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.wellknown-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 0.9rem;
+  background: #121a26;
+}
+
+.wellknown-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.wellknown-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.wellknown-card .hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+}
+
+.wellknown-card a {
+  color: var(--accent);
+}
+
+.wk-summary {
+  margin: 0 0 0.65rem;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.wk-summary li code {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.wellknown-card .json {
+  max-height: 260px;
+}
+
 @media (min-width: 900px) {
   .layout {
     max-width: 960px;
   }
 
-  .grid-2 {
+  .grid-2,
+  .wellknown-grid {
     grid-template-columns: 1fr 1fr;
   }
 }

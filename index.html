@@ -111,6 +111,61 @@
         </div>
       </section>
 
+      <details class="panel wellknown" id="wellknown" open>
+        <summary>Arquivos .well-known (apps liberados)</summary>
+        <p class="muted" style="margin-top: 0.75rem">
+          Conteúdo servido neste domínio para Android (Digital Asset Links) e iOS
+          (Apple App Site Association). Use
+          <button type="button" class="secondary small" id="btn-wellknown-refresh">Atualizar</button>
+          para refetch ao vivo.
+        </p>
+
+        <div class="wellknown-grid">
+          <article class="wellknown-card" id="wk-assetlinks">
+            <header>
+              <h3>Android · assetlinks.json</h3>
+              <span class="badge" id="wk-assetlinks-badge">…</span>
+            </header>
+            <p class="hint">
+              <a id="wk-assetlinks-link" href="/.well-known/assetlinks.json" target="_blank" rel="noopener">
+                /.well-known/assetlinks.json
+              </a>
+              ·
+              <a
+                href="https://developers.google.com/digital-asset-links/tools/generator"
+                target="_blank"
+                rel="noopener"
+                >DAL generator</a
+              >
+            </p>
+            <ul class="wk-summary" id="wk-assetlinks-summary"></ul>
+            <pre class="json" id="wk-assetlinks-body">Carregando…</pre>
+          </article>
+
+          <article class="wellknown-card" id="wk-aasa">
+            <header>
+              <h3>iOS · apple-app-site-association</h3>
+              <span class="badge" id="wk-aasa-badge">…</span>
+            </header>
+            <p class="hint">
+              <a id="wk-aasa-link" href="/.well-known/apple-app-site-association" target="_blank" rel="noopener">
+                /.well-known/apple-app-site-association
+              </a>
+              ·
+              <a
+                id="wk-aasa-cdn-link"
+                href="https://app-site-association.cdn-apple.com/a/v1/estevaolucena-idw.github.io"
+                target="_blank"
+                rel="noopener"
+                >CDN Apple</a
+              >
+            </p>
+            <ul class="wk-summary" id="wk-aasa-summary"></ul>
+            <pre class="json" id="wk-aasa-body">Carregando…</pre>
+          </article>
+        </div>
+      </details>
+
       <details class="panel diagnostics" id="diagnostics">
         <summary>Diagnóstico (timeline, store, metadados, inspetor)</summary>
 
